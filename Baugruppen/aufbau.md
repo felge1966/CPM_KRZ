@@ -2,13 +2,15 @@ Das sind 6 Karten, damit fällt ein 5er Einschubrahmen (vorläufig) aus.
 Im Einschubrahmen stecken bei mir von links nach rechts folgende Karten (Blick auf die Front der Karten, Systembus X1 unten)
 
 Links 
-    64K OPS K3526
-    ABS K7024
-    frei (reserviert AKB K5020)
-    ATS K7028.20
-    OPS K3525
-    ZVE K2521
-    AFS K5122
+
+     64K OPS K3526
+     ABS K7024
+     frei (reserviert AKB K5020)
+     ATS K7028.20
+     OPS K3525
+     ZVE K2521
+     AFS K5122
+
 Rechts 
 
 Aus dem Modul um.mac der Quelle geht die notwendige Speicherumschaltmimik hervor:
