@@ -21,3 +21,4 @@ was ich noch als lader.rom auf dem Server abkippen werde, das ist glaube ich gen
 
 Zum herumschnüffeln sollte es reichen, ich lade auch noch die von mir vorher immer gebootete Date @sysma56.com hoch, die ist genauso zu behandeln wie die Geschichte mit sysht.com.
 Es gibt noch Treiber für Lochband und ADA Karte, die KMB Treiber usw. ich muß erst mal schauen was wie paßt..
+
