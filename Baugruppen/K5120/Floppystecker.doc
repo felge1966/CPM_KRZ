@@ -1,0 +1,28 @@
+Stecker zur AMF5120                   5122 Buchse
+
+A1              00                             A1
+B1              00                             B1
+A2              /HL                            B2
+B2              /SD                            B6
+A3              /FR                            A6
+B3              /SE4                           B4
+A4              /SE3                           A4
+B4              /SE2                           B7
+A5              /SE1                           B8
+B5              /WD                            B10
+A6              /RDYL                          B5
+B6              /WE                            A11
+A7              /ST                            A7
+B7              /LCK4                          A9
+A8              00                             A8
+B8              /LCK3                          B9
+A9              /LCK2                          A5
+B9              /LCK1                          B3
+A10             00                             A10
+B10             /WP                            B12
+A11             /T0                            B11
+B11             /FW                            A2
+A12             00                             A12
+B12             /IX                            A3
+A13             00                             A13
+B13             /RD                            B13
