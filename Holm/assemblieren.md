@@ -1,0 +1,23 @@
+Das sind die Macro Files um ein Bios zu assemblieren und eine @sys.com Datei in der ein Lader, CCP und BDOS stecken.
+
+Ich habe mich da zwar noch irgendwo verkonfiguriert, da BIOS war original auf Arbeit mit nur einem Floppy und Festplatte sowie BWS ab f800 ausgelegt und nun spinnt noch irgendwas mit den Laufwerksbuchstaben, ich komme da immer mal auf E raus... naja. Ich werde das noch finden und die Dateien auf dem laufenden halten.
+
+Ich habe raus bekommen das man das wie folgt bauen sollte:
+
+   M80 biosht=bios1312
+   l80 /p:100,biosht,biosht/n/y/e
+   zsid @sys.com
+   ibiosht.com
+   r1600
+   i@sysht.com
+   w
+   ^c
+
+Dann steht auf der Diskette eine Datei @sysht.com in der das aktuell gebaute BIOS enthalten ist.
+ein Sysgen gibts in dem Sinne nicht, es reicht aus diese Datei auf eine frisch formatierte 800K Disk zu kopieren, sie muß die erste Datei nach dem Directory auf der Disk sein!
+
+LFLOKRZ1.MAC ist ein ROM Loader, ich habe den aqber noch nicht ausprobiert und lade mit dem Ding,
+was ich noch als lader.rom auf dem Server abkippen werde, das ist glaube ich genau das was nebenan in dem Thread als Quelle steht.
+
+Zum herumschnüffeln sollte es reichen, ich lade auch noch die von mir vorher immer gebootete Date @sysma56.com hoch, die ist genauso zu behandeln wie die Geschichte mit sysht.com.
+Es gibt noch Treiber für Lochband und ADA Karte, die KMB Treiber usw. ich muß erst mal schauen was wie paßt..
