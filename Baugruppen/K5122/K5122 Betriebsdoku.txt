@@ -1,0 +1,48 @@
+Von:	"Holger Bretfeld" <trikotex@web.de>
+An:	"Günter Stendel" <gstendel@t-online.de>
+Datum:		05. Jul 2007 12:12
+Betreff:	K5122 Betriebsdoku
+
+Hallo Günter,
+
+hier die versprochene Betriebsdoku K5122. Gleichzeitig die Verdrahtung der
+PRG-Tastatur zum Stecker:
+
+Anschlußnr.              Anschluß
+d. Tastaturplatine       am Stecker
+-----------------------------------
+01                       ABC 7+8
+02                       C9
+03                       B4, C4
+04                       A13
+05                       A4
+06                       A12
+07                       B3, C3
+08                       B13, C13
+09                       A3
+10                       B12, C12
+11                       B2, C2
+12                       A11
+13                       B1, C1
+14                       B11, C11
+15                       A1
+16                       A10
+17                       A2
+18                       B10, C10
+19                       ABC  5+6
+------------------------------------
+Die Anschlußkontakte und Drähte waren bei mir innerhalb der Tastatur bezeichnet
+von 1-19. Sie wurden von links nach rechts vom Rand der Platine aus, auf
+Leiterseite gesehen, Anschlußkabel nach oben, gezählt. (Schöner Satz ;-)). Ich
+hoffe, Du kannst was damit anfangen.
+Die Systemschaltpläne der K5122 folgt in der nächsten Mail.
+
+Alles Gute und beste Grüße
+
+Holger
+
+PS: Entschuldigung, ich hatte vergessen, die Betriebsdoku anzuhängen
+
+
+
+Anlagen:	K5122_Betriebsdokumentation.pdf
