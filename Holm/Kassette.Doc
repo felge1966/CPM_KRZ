@@ -1,0 +1,31 @@
+Hat einer der Gurus Lust sich mal mit der Kassettensoftware zu befassen?
+
+Für das KRZ System gab es von Anfang an einen Kassetten-Lader (schrieb ich schon mal)
+der auf das Robotron-BAMOS Modul aufsetzte und mit dem es möglich war von den Kassetten zu booten
+und diese unter CP/M als Disklaufwerke zu behandeln.
+Da wohl auch schon damals an der HUB festgestellt wurde das die 3K Rom zu knapp für einen Diskettenlader und dieses BAMOs sind, hat Manfred wohl einen "Overlay Handler" geschrieben,
+der zur Laufeit nachladbar ist und 2 Laufwerke N und O zur Verfügung stellt.
+Was ich bisher nicht gefunden habe ist ein Kassetten-fromatier-programm für diesen Overlay Modus,
+allerdings schon einen für die ROM Version.
+Der Quellcode für das BAMOS hat sich auch angefunden, ich habe mal die 3 Sachen zusammen auf den FTP Server geschschoben:
+
+  http://www.tiffe.de/Robotron/CPM-KRZ/KMB/
+
+CINIT.MAC ist die Quelle des Format Programms das den BAMOS Modul im ROM ab 0x248 erwartet,
+KMBNEU.MAC ist die Quelle des BAMOS, und KBOVL.MAC ist die Quelle des Overlay Drivers für die beiden Bandlaufwerke.
+Ich bräuchte mal Jemanden der CINIT.MAC und KMBNEU.MAC zusammen näht, so das man ohne das BAMOS im ROM die Kassetten formatieren kann. Ich würde mich in der Zwischenzeit mal um die Festplatten-Geschichte kümmern die in das CP/M eingebaut ist, so das ich hoffentlich zum Treffen Beides vorführen kann.
+Das KMBOVL.MAC habe ich übersetzt und es läuft auch (denke ich), allerdings klappert es die ganze Kassette von vorne nach hinten durch und bekommt nicht mit das es gegen das Bandende läuft.
+Ich denke das liegt an der fehlenden Initialisierung der Kassette..
+
+Der CTC Kanal der benutzt wird ist Kanal 0 der ZVE CTC (Adresse 80), die Interruptsäule beginnt ab
+xx48 für den CTC, die PIOs der AKB liegen dort ab 0x50, jedenfalls bei dem von mir gelinkten CP/M.
+
+Eine Hilfestellung noch zum assemblieren:
+
+m80 =kmbovl.mac
+...
+l80 /p:100,kmbovl,kmbovl/n/y/e
+
+..erzeugt ein ausführbares Programm....ansonsten bei Volker gucken, er hat das nett zusammengestellt:
+
+http://hc-ddr.hucki.net/wiki/doku.php/cpm:m80
