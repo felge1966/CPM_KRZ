@@ -1,6 +1,8 @@
 Das sind die Macro Files um ein Bios zu assemblieren und eine @sys.com Datei in der ein Lader, CCP und BDOS stecken.
 
-Ich habe mich da zwar noch irgendwo verkonfiguriert, da BIOS war original auf Arbeit mit nur einem Floppy und Festplatte sowie BWS ab f800 ausgelegt und nun spinnt noch irgendwas mit den Laufwerksbuchstaben, ich komme da immer mal auf E raus... naja. Ich werde das noch finden und die Dateien auf dem laufenden halten.
+Ich habe mich da zwar noch irgendwo verkonfiguriert, da BIOS war original auf Arbeit mit nur einem Floppy und Festplatte sowie BWS ab f800 ausgelegt
+und nun spinnt noch irgendwas mit den Laufwerksbuchstaben, ich komme da immer mal auf E raus... naja. 
+Ich werde das noch finden und die Dateien auf dem laufenden halten.
 
 Ich habe raus bekommen das man das wie folgt bauen sollte:
 
