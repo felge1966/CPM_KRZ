@@ -24,3 +24,14 @@ was ich noch als lader.rom auf dem Server abkippen werde, das ist glaube ich gen
 Zum herumschnüffeln sollte es reichen, ich lade auch noch die von mir vorher immer gebootete Date @sysma56.com hoch, die ist genauso zu behandeln wie die Geschichte mit sysht.com.
 Es gibt noch Treiber für Lochband und ADA Karte, die KMB Treiber usw. ich muß erst mal schauen was wie paßt..
 
+So, ich bin ein Bisschen weiter gekommen, ich habe eine Systemversion so anpassen können das sie sich assemblieren läßt und ein brauchbares System ergibt. 
+Das ist eine 52K TPA Version, da gibts auch noch welche mit 55K.. mal sehen.
+
+Ich habe 2 Varianten gebaut, eine die den CCP als Kopie in dem 16Kbyte OPS K3525 hält und eine bei der der CCP in die beiden höheren ZVE-ROMs gebruzelt ist. 
+Bei letzterer Version geht zwar glaube ich ad hoch keine Kassettenarbeit (eh nicht mit eingebaut derzeit) aber der Rechner umfaßt nur noch 5 Platinen (AFS,ZVE,ATS,ABS und OPS) und paßt damit in einen 5er Einschub eines K891x.
+
+Ich Kratze das "alte" Zeug oben wieder vom Webserver und werde die beiden Varianten da hoch laden.
+Den Laderom habe ich auch aus nun verfügbaren Quellen gebaut, der kann 200 und 800k und ist ein paar Bytes zu lang :-) als das das KMB BAMOS Zeugs da rein passen würde. 
+Ich schaue mir das sicher später noch an..
+
+Als CCP habe ich übrigens den com CP/A genommen der als ERL File vorliegt und den simepl auf c800 gelinkt, die Quelle von Volker erzeugte erst mal unresolved Externals ..wenn ich Lust habe gucke ich da noch rein. SWAP a: b: geht trotzdem nicht, habe noch nicht geforscht warum, möglicherweise wird das bei CP/A ins BDOS oder BIOS durchgereicht, habe ich vergessen.
