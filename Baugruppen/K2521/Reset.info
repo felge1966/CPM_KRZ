@@ -1,0 +1,15 @@
+Ich habe einfach nur einen Taster an den Bus gewickelt, zwischen /Reset und 00.
+Ja.. das prellt.
+Die Power On Reset Geschichte sollte aber vom Resetgenerator auf der K2521 erledigt werden, 
+dort gibts ja extra dafür den dicken 4,7µF C samt nachfolgendem Schmitt-Trigger, 
+allerdings muß dafür die im Schaltplan mit E1 gekennzeichnete Brücke geschlossen sein.
+ 
+Das Power Good Signal aus dem ATX Netzteil sollte eigentlich auch benutzbar sein, da dieses ja H-aktiv ist, das habe ich aber noch nicht ausprobiert...
+
+Zum Basteln reichts evtl. wenn Du mit dem Taster einfach diesen C entlädst, dann bekommst Du ein sauberes Rechteck an der /Reset Leitung.
+
+Für den endgültigen Einbau in ein K891x Gehäuse würde ich die auf der Platine mit dem DC/DC Wandler vorgesehenen, 
+aber meist nicht bestückten 74121 benutzen..für Reset und NMI, Man braucht ja für die /Memdi Umschaltung auch noch einen Negator, der könnte da auch Platz finden.
+
+Edbru
+ich hab da einen 47µF Elko an GND parallel zu einem Taster mit 470 Ohm nach 5P. Resettet sogar beim Einschalten - aber nicht immer.
