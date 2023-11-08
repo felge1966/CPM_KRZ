@@ -1,0 +1,572 @@
+; Legende AMF:
+;   Port A
+;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;    |   |   |   |   |   |   |   |__ A  /WE  0-Schreiben ein
+;    |   |   |   |   |   |   |______ A   MK  lesen  0-MFM-A1 Erkennung
+;    |   |   |   |   |   |                          1-FM-Mark., MFM-C2 Erkenn.
+;    |   |   |   |   |   |               schreiben  0-Takt fuer MFM
+;    |   |   |   |   |   |                          1-Marken FM und A1 MFM
+;    |   |   |   |   |   |__________ A  /SIDE 0-Kopf Seite 1; 1-Kopf Seite 0
+;    |   |   |   |   |        oder   A  /FR   0-Fault reset;  1-kein FR
+;    |   |   |   |   |______________ A  /STR 0-AMF aktiv
+;    |   |   |   |                           1-AMF ausgeschaltet
+;    |   |   |   |__________________ A   MK1 lesen  0-Informationen einlesen
+;    |   |   |                                      1-nur 1 einlesen
+;    |   |   |                           schreiben  0-FM-Daten schreiben
+;    |   |   |                                      1-MFM und FM-Marken schr.
+;    |   |   |______________________ A   MR, SD     0-steppen Richtung aussen
+;    |   |                                          1-Marke-erkannt loeschen
+;    |   |                                            steppen Richtung innen
+;    |   |__________________________ A  /HL         0-Kopf geladen
+;    |                                              1-Kopf entladen
+;    |______________________________ A  /ST         0-Stepsignal an LW ein
+;                                                   1-Stepsignal an LW aus
+;
+;  Port B
+;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;    |   |   |   |   |   |   |   |__ E  /RDY  0-Laufwerk bereit
+;    |   |   |   |   |   |   |                1-Laufwerk nicht bereit
+;    |   |   |   |   |   |   |______ E  /MKE  0-Marke erkannt
+;    |   |   |   |   |   |                    1-Marke noch nicht erkannt
+;    |   |   |   |   |	 oder PC1715 E   MKE  1-Marke erkannt
+;    |   |   |   |   |   | u.K5122            0-Marke noch nicht erkannt
+;    |   |   |   |   |   |__________ E  /SYN  ???? (K5120)
+;    |   |   |   |   |  oder K5122   A  /HF   0-Takt fuer 8" MFM
+;    |   |   |   |   |                        1-Takt fuer 5" MFM und 8" FM
+;    |   |   |   |   |  oder PC1715: A   MFM  0-FM-Aufzeichnung
+;    |   |   |   |   |                        1-MFM-Aufzeichnung
+;    |   |   |   |   |______________ A   PRE  0-schreiben ohne Prekompensation
+;    |   |   |   |                            1-schreiben mit         "
+;    |   |   |   |__________________ E  /FA   0-Fehler in der AMF aufgetreten
+;    |   |   |                                1-kein Fehler aufgetreten
+;    |   |   |          oder PC1715: A   FO   0-5"-Disketten
+;    |   |   |                                1-8"-Disketten
+;    |   |   |______________________ E  /WP   0-Schreibschutz ist ein
+;    |   |                                    1-kein Schreibschutz
+;    |   |__________________________ E  /FW   0-Laufwerk meldete Schreibfehler
+;    |                                        1-Laufwerk meldete keinen Fehler
+;    |______________________________ E  /T0   0-Kopf steht auf Spur 0
+;                                             1-Kopf steht nicht auf Spur 0
+;------------------------------------------------------------------------
+;
+; Legende Speichersteuerung
+; -------------------------
+;
+; System-PIO Port A
+;
+; |7|6|5|4|3|2|1|0|
+;  | | | | | | | |
+;  | | | | | | | +---  /MEMDI1 ZRE
+;  | | | | | | +-----  negiert /MEMDI 0 RAM und 4000 RAM (CP/M) -
+;  | | | | | +-------  /MEMDI1 4000 RAM (Hintergr.verzeichnisse)
+;  | | | | +---------  frei
+;  | | | +-----------  /MEMDI1 8000 ABS
+;  | | +-------------  /MEMDI2 8000 RAM	-
+;  | +---------------  /MEMDI  C000 RAM	-
+;  +-----------------  frei
+;------------------------------------------------------------------------
+
+
+ladadr		equ	0b000h		; Ladeadresse
+ladlen		equ	5000h
+reclen		equ	1024
+startad		equ	0c885h
+secanz		equ	5		; Anzahl der phys. Sektoren pro Spur
+spber		equ	0A000h
+side		equ	spber
+dev 		equ	spber+1		; 0,3 -Kassette; 1-5"Floppy; 2-8"Floppy
+solsec 		equ	spber+2		; Soll-Spurnr.
+soltrk 		equ	spber+3		; Soll-Sektornr.
+isttrk 		equ	spber+4		; aktuelle Spur
+;
+sidpuf:		equ	spber+5		; Bereich fuer zu lesendes Sektor-ID 8 Bytes
+;
+datpuf:		equ	spber+13	; Bereich fuer zu lesendes Daten-ID 1027 Bytes
+
+;
+bws		equ	08000h
+ramst		equ	0c00h
+
+ats		equ	0e0h
+atsctc0		equ	ats+18h
+atsctc1		equ	ats+19h
+atsctc2		equ	ats+1ah
+atsctc3		equ	ats+1ah
+
+zvectc0		equ	080h
+zvectc1		equ	zvectc0+1
+zvectc2		equ	zvectc0+2
+zvectc3		equ	zvectc0+3
+
+atssioad	equ	0f0h
+atssioas	equ	0f1h
+atssiobd	equ	0f2h
+atssiobs	equ	0f3h
+zrepioad	equ	084h
+zrepiobd	equ	085h
+zrepioas	equ	086h
+zrepiobs	equ	087h
+
+cr		equ	0dh
+lf		equ	0ah
+qatd		equ	0c00h
+offset		equ	0c000h
+
+
+	org	0
+	ld	a,0cfh
+	out	(zrepiobs),a
+	ld	a,067h
+	out	(zrepiobd),a
+	ld	a,080h
+	out	(zrepiobs),a	; ZRE Speicher, 8000-FFFF an
+
+	ld	hl,resta
+	ld	de,offset+resta
+	ld	bc,restae-resta
+	ldir
+
+	ld	hl,relo
+	ld	de,relo+offset
+	ld	bc,relend-relo
+	ldir
+	jp	resta+offset
+
+resta	ld	a,060h
+	out	(zrepiobd),a
+	ld	hl,relo+offset
+	ld	de,0100h
+	ld	bc,relend-relo
+	ldir
+	jp	0100h
+
+restae	equ	@
+
+	org	0100h
+
+relo:	di			;Interrupt aus
+start:	ld	sp,spber
+	xor	a
+start1:	LD	(dev),A
+	CALL	gettr0		; ist das Geraet lesebereit?
+	OR	A
+	JR	Z,laden		; -> ja
+start2:	LD	A,(dev)		; naechstes Geraet
+	INC	A
+	JR	start1
+
+; nach ladadr laden von Spur 0/1
+;
+laden:
+	ld	iy,ladadr	; Ladeadresse
+	ld	de,1		; Nr. des ersten zu ladenden Sektors
+	ld	bc,ladlen/reclen ; Anzahl der zu ladenden Sektoren
+
+ladee:	LD	A,B
+	OR	C
+	JR	Z,test		; -> Bereich ist vollstaendig geladen
+	DEC	BC
+
+; 1.-n. Datensatz lesen
+;
+	PUSH	DE		; Sektornummer auf Stack
+	PUSH	BC		; restliche zu ladende Sektoren
+	CALL	lesueb
+	JR	NZ,start2	; -> naechstes Geraet abfragen
+	ADD	IY,BC
+	POP	BC
+	POP	DE
+	INC	DE
+	JR	ladee
+
+; es ist alles geladen
+;
+test:	CALL	allaus
+	ld	hl,ladadr	; pruefen, ob ein System geladen wurde
+	ld	de,kontr
+	ld	b,konlen
+test1:	ld	a,(de)
+	cp	(hl)
+	jr	nz,start2
+	inc	hl
+	inc	de
+	djnz	test1
+
+	jp	startad		; geladenes Programm starten
+	jr	@
+kontr:	defb	0
+	defm	"@SYS"
+konlen	equ	@-kontr
+;------------------------------------------------------------------------
+; Lesen und uebertragen
+;   IY - Adresse auf die zu lesen ist
+;   DE - abs. Sektornr., des Sektors der zu lesen ist
+;
+lesueb:	PUSH	IY		; Adresse fur zu lesende Daten
+	LD	A,(dev)		; welches Device
+	CALL	lesen
+	POP	DE		; aus Lesepuffer auf Zieladresse uebertragen
+	PUSH	BC
+	LDIR
+	POP	BC
+	OR	A
+	RET
+;-----------------------
+
+; alles ausschalten
+;
+allaus:	LD	HL,pdaus
+
+; Ausgabe einer Port/Daten-Liste
+;   HL zeigt auf Liste: Port,Datum,Port,Datum,...,0
+;
+outtab:	LD	A,(HL)
+	AND	A
+	RET	Z
+	LD	C,A
+	INC	HL
+	LD	A,(HL)
+	OUT	(C),A
+	INC	HL
+	JR	outtab
+
+; CRC-Berechnung
+;
+bercrc:	ex	af,af'
+	LD	A,0e5h		; CRC-Anfangswert
+	LD	C,09ah
+	PUSH	DE
+	ex	af,af'
+bcrc1:	ex	af,af'
+bcrc2:	LD	E,A
+	INC	HL
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	AND	0FH
+	XOR	E
+	LD	E,A
+	RRCA
+	RRCA
+	RRCA
+	LD	D,A
+	AND	0E0H
+	XOR	(HL)
+	XOR	E
+	LD	E,A
+	LD	A,D
+	AND	1FH
+	XOR	C
+	LD	C,A
+	LD	A,D
+	RRCA
+	AND	0F0H
+	XOR	C
+	LD	C,E
+	DJNZ	bcrc2
+	ex	af,af'
+	dec	a
+	ld	b,80h
+	jr	nz,bcrc1
+	ex	af,af'
+	OR	C
+	POP	DE
+	RET
+;-----------------------
+; Lesen eines mit Sektors von soltrk,solsec
+;   in DE absolute Sektornr.
+;  Out H Spur (solsec+1=soltrk) , L Sektor (solsec)
+;
+lesen:	PUSH	DE		; Sektornummer
+	call	setix
+	POP	HL		; Sektornummer nach HL
+
+	XOR	A		; aus abs. Sektornr. Spur/Sektor machen
+	LD	D,A
+	LD	E,secanz	; Anzahl der Sektoren pro Spur
+	DEC	HL
+	LD	B,0FFH
+I013A:	INC	B
+	SBC	HL,DE
+	JR	NC,I013A
+	ADD	HL,DE
+	INC	L
+	LD	H,B
+	LD	(solsec),HL
+
+; Laufwerksbereitschaft 5"Floppy ermitteln
+;   bei Rueckkehr: z - ready; nz - not ready
+;
+ready5:	LD	DE,0
+	LD	A,0BFH		; Kopf laden
+	OUT	(10H),A
+I0225:	IN	A,(12H)
+	BIT	0,A		; /RDY?
+	jr	z,I0226		; ja
+	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,I0225	; warten auf /READY bis DE=0
+	JP	I02C2		; -> nein, nicht bereit
+
+I0226:	CALL	spursu
+	CALL	les2id
+
+I015C:	PUSH	AF
+	LD	HL,pdaus0	; AMF abschalten, Motor laufen lassen
+	CALL	outtab
+	POP	AF
+	LD	HL,datpuf+1
+	LD	BC,reclen
+	RET
+;-----------------------
+; Geraet auf Spur 0 fahren
+;  in A: LW-Nr.
+;
+gettr0:	LD	HL,pdinit	; AMF initialisieren
+	PUSH	AF
+	CALL	outtab
+	POP	AF
+	CALL	setix
+	LD	A,0
+	LD	(isttrk),A
+	LD	B,8
+	CALL	steps
+	LD	B,85
+	CALL	trk0
+	JP	NZ,I02C2	; -> Spur 0 nicht gefunden
+	LD	A,0		; Geraet ist bereit zum lesen
+	JR	I015C
+;-----------------------
+; Floppy selektieren und AMF freischiessen
+;
+setix:	ld	hl,seltab
+	and	3
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	LD	A,0FFH
+	OUT	(10H),A
+	LD	A,0
+	OUT	(14H),A
+	IN	A,(16H)
+	LD	A,(HL)
+	OUT	(18H),A		; select Floppy
+	ret
+;-----------------------
+steps:	CALL	stepin
+	DJNZ	steps
+	RET
+;-----------------------
+trk0:	LD	c,12H
+	IN	A,(C)
+	AND	80h
+	RET	Z
+	LD	HL,stot
+	CALL	stepou
+	DJNZ	trk0
+	INC	B
+	RET
+;-----------------------
+stepin:	LD	HL,stit
+stepou:	CALL	outtab
+	LD	DE,400h
+
+wait:	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,wait
+	RET
+;-----------------------
+spursu:	ld	a,(soltrk)
+	rra
+	jr	nc, spger
+	ld	a,0bbh
+	jr	spsid
+spger:	ld	a,0bfh
+spsid:	ld	(side),a
+	ld	a,(isttrk)
+	and	0feh
+	ld	b,a
+	ld	a,(soltrk)
+	and	0feh
+	sub	b
+	jr	z,spnos
+	rra
+	ld	b,a
+	call	steps
+spnos:
+spusu2:	LD	A,(soltrk)
+	LD	(isttrk),A	; aktuellen Track sichern
+	LD	C,10H		; Kopf laden
+	ld	a,(side)	; Seiteninfo nach A
+	OUT	(C),A
+	LD	DE,1000H
+	JP	wait
+
+;-----------------------
+; Lesen eines Sektor-ID und eines Daten-ID nach sidpuf und datpuf
+;
+les2id:	LD	E,0FFH
+I0264:	LD	C,16H		; Datenport Eingabe
+	LD	D,27		; Gaplaenge
+	LD	HL,sidpuf
+	LD	B,7
+	ld	a,1		; 1x7 byte lesen
+	PUSH	DE
+	LD	DE,900H
+	CALL	mrksu		; ID lesen
+	POP	DE
+	CP	0FEH		; Sektor-ID?
+	JR	NZ,I02BB	; -> nein
+
+	LD	B,D
+I027D:	IN	A,(C)		; gap ueberlesen
+	NOP
+	NOP
+	DJNZ	I027D
+
+	LD	HL,datpuf
+	LD	B,83H
+	ld	a,reclen/128	; x*80h byte
+	PUSH	DE
+	LD	DE,250H
+	CALL	mrksu		; ID lesen
+	POP	DE
+	CALL	setber
+
+	LD	HL,sidpuf-1	; Sektor-ID-CRC richtig?
+	LD	B,7
+	ld	a,1		; 1x80h
+	CALL	bercrc
+	JR	NZ,I02BE	; -> nein, weiter versuchen
+
+	LD	A,(sidpuf+1)	; richtige Spurnr.?
+	LD	HL,soltrk
+	CP	(HL)
+;	JR	NZ,I02C2	; -> nein, abbrechen
+	nop
+	nop
+
+	LD	A,(sidpuf+3)	; richtige Sektornr.?
+	DEC	HL
+	CP	(HL)
+	JR	NZ,I02BE	; -> nein, weiter versuchen
+
+	LD	HL,datpuf-1	; Daten-ID-CRC richtig?
+	LD	B,83H
+	ld	a,reclen/128	; x*80h
+	CALL	bercrc
+	JR	NZ,I02BE	; -> nein, weiter versuchen
+
+	xor	a		; alles ok.
+	ret
+
+I02BB:	CALL	setber
+I02BE:	DEC	E
+	JR	NZ,I0264
+
+I02C2:	CALL	allaus
+	LD	A,0FFH
+	JP	I015C
+;-----------------------
+; Floppy ruecksetzen (bereit machen)
+;
+setber:	LD	A,0A5H
+	OUT	(10H),A
+;	LD	A,0BBH
+	ld	a,(side)
+	OUT	(10H),A
+	IN	A,(16H)
+	RET
+;-----------------------
+; Marke suchen (FE/FB bei Floppy, AA bei Kassette) und Daten dahinter lesen
+;   in  DE - timeout-Zeit beim Markensuchen
+;       HL - Pufferadresse
+;   out A  - Marke
+;
+mrksu:	ex	af,af'
+	LD	(HL),0
+	CALL	setber
+I0314:	ld	a,(side)
+	cp	0bfh
+	jr	nz,mrk01
+	LD	A,85H		; Markenerkennung ein
+	jr	mrk02
+mrk01:	ld	a,081h
+mrk02:	OUT	(10H),A
+I0318:	DEC	D		; auf Marke warten
+	JR	Z,I0312		; -> time out; es kam keine
+I031B:	DEC	E
+	JR	Z,I0318
+	IN	A,(12H)
+	AND	2
+	JR	NZ,I031B
+	IN	A,(C)
+	LD	D,0
+	CP	0A1H
+	JR	NZ,I0312	; -> es kam falsche Marke
+	IN	A,(C)
+	CP	0A1H
+	JR	NZ,I0312	; -> es kam nach A1 nicht weiteres A1
+	IN	A,(C)
+	CP	0A1H
+	JR	NZ,I0312	; -> es kam nicht das 3. A1
+
+I0309:	IN	D,(C)		; FE/FB lesen
+	LD	(HL),D
+	INC	HL
+	ini
+	ex	af,af'
+I030D:	nop
+I030E:	INI			; Datensatz einlesen
+	JR	NZ,I030D
+	ld	b,80h
+	ini
+	dec	a
+	jr	nz,I030E
+I0312:	LD	A,D
+	RET
+
+;-----------------------
+; Befehle fuer Schrittausfuehrung
+;
+stit:	defb	10H,0bfh
+	defb	10H,03fh
+	defb	10H,0bfh
+	defb	0
+
+stot:	defb	10H,9fh
+	defb	10H,1fh
+	defb	10H,9fh
+	defb	0
+
+seltab:	defb	0EEH,0DDH,0BBH,77H	; Floppy
+
+pdinit:	defb	15H,0FH		 ; AMF initialisieren
+	defb	17H,4FH
+	defb	11H,0FH
+	defb	10H,0FFH
+	defb	13H,0CFH
+	defb	13H,0F7H
+	defb	12H,0F7H
+	defb	18H,0FFH
+	defb	16H,0FFH
+	defb	14H,0
+;	defb	87h,0cfh	; Speicherumschaltung initialisieren
+;	defb	85h,67h
+;	defb	87h,80h
+;	defb	0
+
+pdaus:	defb	18H,0FFH	; alles ausschalten
+pdaus0:	defb	10H,0FFH
+	defb	12H,0FFH
+	defb	0
+
+;	org	0260h
+
+;	INCLUDE "bamost1.mac"
+relend	equ	@
+
+end
