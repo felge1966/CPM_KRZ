@@ -1,0 +1,5 @@
+Drucker habe ich auch ausprobiert, mußte dazu das IO-Bzte von 0x15 auf 0x85 umsetzen, da der Output bei mir auf der V.24 Schnittstelle landete, 
+ich aber ein IFSS Kabel zusammen gelötet hatte.
+  
+Das BIOS initialisiert beide serielle Schnittstellen auf der ATS mit 9600,7,E,1, Durckersteuerung mit XON/XOFF. 
+Hab mit dem 6313 schon ein schickes Assemblerlisting gedruckt :-)
