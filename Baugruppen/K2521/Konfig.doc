@@ -3,9 +3,13 @@ K2521
 Extrakt des Beitrages von holm aus dem Robotrontechnik-Forum:
 
 * ZVE auf /MEMDI 1 gewickelt, d.h. X2:A21 mit X2:A11 verbunden.
-* Pio Port PB1 X2:C11 führt über einen zusätzlich anzubringenden Negator (bei mir ein D100 mit Stützkondensator auf einem Schnipsel Lochraster an der Rückverdrahtung angespaxt) auf /MEMDI X1:C9 irgendwo auf dem durchverbundenen Systembus. /MEMDI schaltet den Speicherbereich von 0-7fffh des Hauptspeichers.
+* Pio Port PB1 X2:C11 führt über einen zusätzlich anzubringenden Negator (bei mir ein D100 mit Stützkondensator auf einem Schnipsel Lochraster 
+  an der Rückverdrahtung angespaxt) auf /MEMDI X1:C9 irgendwo auf dem durchverbundenen Systembus. 
+  /MEMDI schaltet den Speicherbereich von 0-7fffh des Hauptspeichers.
 * PIO Port PB2 X2:A10 führt zu zu X1:A21 /MEMDI2 des 16K Hintergrundspeichers OPS K3525.
-* PIO Port PB4 X2:A9 führt zur ABS K7024 X2:A21 die ich leicht modifiziert habe, normalerweise läßt sich /MEMDI dieser Karten nicht woanders hin legen, aber man hat nur die Wahl entweder die K3526 umzubauen oder die K7024 wenn man die Systembusverdrahtung nicht auftrennen möchte. Jedenfalls habe ich den Leiterzug zu X1:C9 der K7024 aufgetrennt und den betreffenden Gattereingang mit X2:A21 verbunden.
+* PIO Port PB4 X2:A9 führt zur ABS K7024 X2:A21 die ich leicht modifiziert habe, normalerweise läßt sich /MEMDI dieser Karten nicht woanders 
+  hin legen, aber man hat nur die Wahl entweder die K3526 umzubauen oder die K7024 wenn man die Systembusverdrahtung nicht auftrennen möchte. 
+  Jedenfalls habe ich den Leiterzug zu X1:C9 der K7024 aufgetrennt und den betreffenden Gattereingang mit X2:A21 verbunden.
 * PB5 X2:C9 der ZVE führt zu X2:A21 der OPS K3526, und
 * PB6 zu X2:C21 der K3526. Diese Bits schalten die Bereiche 8000 und C000 des Hauptspeichers.
 * Der unbenutze Pin PB7 wird vom BIOS als Eingang initialisiert..
