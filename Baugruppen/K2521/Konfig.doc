@@ -9,3 +9,6 @@ Extrakt des Beitrages von holm aus dem Robotrontechnik-Forum:
 * PB5 X2:C9 der ZVE führt zu X2:A21 der OPS K3526, und
 * PB6 zu X2:C21 der K3526. Diese Bits schalten die Bereiche 8000 und C000 des Hauptspeichers.
 * Der unbenutze Pin PB7 wird vom BIOS als Eingang initialisiert..
+
+
+  Zu /IEI ... Ja, das habe ich am Busanfang nach Masse gewickelt..sorry, fehlt wohl in der Beschreibung.
