@@ -1,0 +1,14 @@
+
+Ja, CLK/TRG3 ist auf A22, OPS X8.3 auf X9.3 ist auch korrekt. MEMDI s.u..
+
+Auch ich habe den ganzen Koppelbus durchgefräst...ich will nie wieder einen Bürocomputer bauen und ein Steckverbinder vom Systembus hat eh eine Macke..
+
+Bei der gnazen MEMDI Geschichte solltet Ihr noch mal drüber nachdenken, es ist im Endeffekt völlig Brust welche konkrete MEMDI Leitung für was verwendet wird, relevant ist, das die entsprechenden PIO-Pins wie in der Legende auch diese Speicherbereiche wie angegeben schalten. Ich habe wohl auch nicht die optimale Variante, weil ich die ABS Karte umbauen mußte, die geht standardmäßig nur mit MEMDI aber die beiden Zusammenhängenden Blöcke 0 und 4000 vom Hauptspeicher (3526) lassen sich auch nur mit MEMDI zusammen abschalten. Den Systembus wollte ich nicht durchkratzen ...
+
+Ich habe mich also nicht nach der MEMDI Bechriftung in der Legende gerichtet, sondern nach den PINs am PIO und dem Speicherbereich, daher dieser Widerspruch.
+
+Wenn in dem Beitrag von mir Fipptehler drin sind ist das ärgerlich, ich sehe mal zu das ich das nochmal durchsehe, evtl. kann ich ja Rüdiger überzeugen das er darin ein Bisschen herum korrigiert.
+
+Ich mußte gestern und heute mal arbeiten, habe Platinen gemacht, die aber Nichts mit der Sache zu tun haben. Der OMTI MFM Controller liegt hinter mir und ich habe aus einem defekten Mainboard einen ISA Slot ausgelötet. Jetzt überlege ich wie ich weiter mache. Der 7er Einschub ist ja an und für sich voll, da muß ich wohl hinten was "anmehren". Geht das halbwegs zuverlässig wenn man auf die Wickelpins einen Steckverbinder würgt? .. an den äußeren fehlen hier und da schon Pins.... hmm...
+
+Gruß,
