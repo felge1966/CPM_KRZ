@@ -1,0 +1,61 @@
+; Leserbedienung an ALB
+; ---------------------
+;
+; 08.09.1985 (M. Krzikalla)
+
+ if1
+ .printx * Leser
+ .printx *     08.09.85 - K6200 an ALB
+ endif
+
+ri.ch::	in	a,(plsta)	; lb-leser status
+	bit	4,a		; leser bereit?
+	jr	z,ri01		; -> ja
+	ld	a,1ah
+	ret
+
+ri01::	ld	a,83h		; pio-int erlauben
+	di
+	out	(pldat+2),a
+	push	bc
+	ld	bc,0ffffh
+	ei
+ri02::	dec	c		; warten auf int
+	jr	nz,ri02
+	djnz	ri02
+	ld	a,3
+	out	(pldat+2),a	; innerhalb der warteschleife kein int
+	pop	bc
+	ld	a,1ah
+	ret
+;
+irich::	pop	af		; kein ruecksprung in warteschleife
+	pop	bc
+	ld	a,3
+	out	(pldat+2),a
+	in	a,(pldat)
+irist::	ei
+	reti
+;
+ripar::	defb	0cfh,0f0h
+	defb	ioria and 0ffh,4fh,3
+;
+ri.kalt	macro
+	endm
+;
+ri.warm	macro
+ri.war::ld	hl,ripar
+	ld	bc,200h+plsta+2
+	otir
+	ld	bc,300h+pldat+2
+	otir
+	ld	a,2
+	out	(plsta),a	; leser re ---> li / alb bereit
+	in	a,(pldat)
+	endm
+;
+ri.xon	macro
+	endm
+ri.xof	macro
+	endm
+

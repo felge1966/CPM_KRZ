@@ -1,0 +1,154 @@
+	title	14.02.1989   CPM3 5"-Floppyversion 2.0/ATS
+	subttl	Minifloppy 1.6
+
+biosan	equ	0de00h
+biosen	equ	0ffffh
+ if1
+ramend	defl	0
+ endif
+
+test	equ	0
+
+; Bildschirm
+;
+bsanf	equ	8000h		; Bildschirmadresse
+maxz	equ	24		; Zeilenanzahl
+maxs	equ	80		; Spaltenanzahl
+
+; CCP-Kopie
+;
+ccpadr	equ	4000h		; CCP-Kopie
+
+; Toradressen der Tastatur
+;
+ptch	equ	0e0h
+ptctc	equ	80h		; Kanal 3 wird benutzt
+;
+typzei	equ	0a0h		; Typzeichen der Tastatur
+
+; Toradressen Leser
+;
+plsta	equ	0b0h
+pldat	equ	0b1h
+
+; Toradressen Stanzer
+;
+pssta	equ	0b4h
+psdat	equ	0b5h
+
+; Toradresse fuer Drucker an ATS
+;
+lo.ctc	equ	0f8h		; CTC-Kanal 0, 1 und 2 wird benutzt
+lo.sioda equ	0f0h		; SIO-Kanal A
+lo.sioca equ	0f1h
+lo.siodb equ	0f2h		; SIO-Kanal B
+lo.siocb equ	0f3h
+
+; Puffer
+;
+flobuf	equ	0c00h
+
+; ROBOTRON Kassettenroutine
+;
+anzakb	equ	0		; Anzahl der Doppellaufwerke K5221
+kmbrob	equ	260h
+
+; Adressen der Floppykarte AMF K5120
+;
+flcoad	equ	10h
+flcoac	equ	11h
+flcobd	equ	12h
+flcobc	equ	13h
+fldaad	equ	14h		; Port A Lese-Daten
+fldaac	equ	15h
+fldabd	equ	16h		; Port B Schreib-Daten
+fldabc	equ	17h
+flsel	equ	18h
+
+flctc	equ	81h		; CTC-Adresse zur Motorabschaltung
+
+; Speicherverteilung
+;
+; Kassettenroutine auf ZRE-Karte (mit PB0 geschaltet)
+; ---------------------------------------------------
+;
+;  0000  ;  Floppyanfangslader		    1,0 k auf ZRE-PROM
+;  0400  ;  CCP-Kopie			    2,0 k       "
+;  0c00  ;  Floppypuffer		    1,0 k auf ZRE-RAM
+;
+; Bildschirm (mit PB4 geschaltet)
+; -------------------------------
+;
+;  8000  ;  Bildschirm                      2,0 k weggeschaltet
+;
+; CP/M Arbeitsspeicher (0 und 4000 mit /PB1, 8000 mit PB5, c000 mit PB6 gesch.)
+; -----------------------------------------------------------------------------
+;
+;  de00  ;  biosan        bios              5,5 k
+;  d000  ;  biosan-0e00   bdos              3,5 k  =  12 k
+;  c800  ;  biosan-1600   ccp               2,0 k
+;        ;                sim.disk
+;   100  ;                tpa
+
+
+mbootm	macro
+bmsg::	defb	'52k CP/M vom 14.02.1989 (M. Krzikalla)',lf,cr
+	defb	'VEB WU Elsterberg',cr,lf
+	defb	'ATSi, 1152/57/6311 SIO',cr,lf
+	defb	'A:       800k oder 0-4 RAF 512',cr,lf
+	defb	'   B:    800k',cr,lf
+	defb	'   C:    780k',cr,lf
+	defb	'   D:    624k',cr,lf
+	defb	'   E:    200k',cr,lf
+	defb	'F: G: H: Festplatte',cr,lf
+	defb	'M: evtl. 800k',cr,lf
+	endm
+;
+ccpcop	macro
+	ld	a,67h
+	out	(85h),a
+	ld	hl,ccpadr
+	ld	de,biosan-1600h
+	ld	bc,800h
+	ldir
+	ld	a,60h
+	out	(85h),a
+	ld	hl,serial
+	ld	bc,6
+	ldir
+	ld	de,biosan-1600h+7
+	ld	bc,40h
+	ldir
+	jr	ccpcp1
+serial::defb	0,16h,0,0,0,0a5h
+autopu::defs	40h,0
+ccpcp1::
+	endm
+;
+gosys	macro
+	ld	a,3		; Tastaturinterrupt sperren
+	out	(ptctc+3),a
+	ld	a,57h
+	out	(85h),a
+	rst	0
+	endm
+;
+bstrap	macro
+start::
+
+;	ld	hl,anfang	; zum bootstrap des Systems
+;	ld	de,biosan
+;	ld	bc,ende-anfang
+;	ld	a,3
+;	out	(80h),a
+;	out	(81h),a
+;	out	(82h),a
+;	out	(83h),a
+;	ldir
+;	jp	biosan
+;	org	start+100h
+anfang::
+	endm
+;
+
+

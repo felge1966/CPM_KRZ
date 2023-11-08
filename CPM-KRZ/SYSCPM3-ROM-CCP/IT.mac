@@ -1,0 +1,50 @@
+; Interrupttabellen fuer BIOS Version 2.xx
+;
+; 08.09.1985 (M. Krzikalla)
+; 10.08.1988
+
+ if1
+ .printx * Interrupttabelle
+ .printx *     10.09.88 - VEB WU Elsterberg Version 2.2
+ endif
+
+; xx48h
+io::
+ioctc::	defw	kmbrob+8afh	; Interruptvektoren System-CTC
+	defw	0,0		;   vom K5120-Floppytreiber benutzt
+	defw	icich		; Zeicheninterrupt von Tastatur
+; xx50h
+	defw	kmbrob-260h+6c5h; Interruptvektoren KMB-Routine
+	defw	kmbrob-260h+769h
+	defw	kmbrob-260h+7b8h
+	defw	kmbrob-260h+8aah
+	defw	kmbrob-260h+8c5h
+	defw	kmbrob-260h+8e0h
+; xx5ch
+ioflo::	defw	0,0		; Interrupts vom Floppy (Index, fault)
+; xx60h
+ioats::	defw	0,0,0,0		; Interruptvektoren ATS-CTC
+; xx68h
+	defw	0,0,0,0
+; xx70h
+ioria::	defw	irich		; Zeicheninterrupt vom leser
+iorib::	defw	irist		; Statusinterrupt  vom leser
+iopua::	defw	ipuch		; Zeicheninterrupt vom stanzer
+iopub::	defw	ipust		; Statusinterrupt  vom stanzer
+ioloa::	defw	0		; Zeicheninterrupt vom drucker
+iolob::	defw	0		; Statusinterrupt  vom drucker
+; xx7ch
+	defw	0,0		; Reserve
+; xx80h
+
+ if ((ioats and 0fff8h) ne ioats) or ((ioctc and 0fff8h) ne ioctc)
+ .printx ..
+ .printx ? ************************************************************
+ .printx ? **** Fehler: Interruptadresse CTC nicht durch 8 teilbar ****
+ .printx ? ************************************************************
+ .printx ..
+ endif
+
+	jp	ft.flo
+	dw	0
+

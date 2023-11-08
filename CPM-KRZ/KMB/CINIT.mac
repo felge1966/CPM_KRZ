@@ -1,0 +1,263 @@
+	TITLE	17.7.85  -  Kassetteninitialisierung fuer Kassetten-CP/M
+	.Z80
+;
+;
+; Funktion
+; --------
+;
+;    Das Programm initialisiert eine Kassette
+;    zur Verwendung als CP/M-Systemkassette.
+;
+;
+; Bedienung
+; ---------
+;
+;    Start mit A>CINIT
+;    Die weitere Bedienung erfolgt entsprechend
+;    den Ausschriften.
+;
+;
+; Bandaufbau
+; ----------
+;
+;    sent 0/0  12 byte
+;    256 byte  fuer directory
+;    sent 0/1  12 byte
+;    256 byte  fuer directory
+;    ...
+;    sent 0/7  12 byte
+;    256 byte  fuer directory
+;    BM
+;    sent 1/0  12 byte
+;    256 byte  1. und 2. Datenblock
+;    sent 1/1
+;    256 byte  3. und 4. Datenblock
+;    ...
+;    sent 1/7  15. und 16. Datenblock
+;    BM
+;    sent 2/0
+;    256 byte  17. und 18. Datenblock
+;    ...
+;    ...
+;
+;----------------------------------------------------------------------
+;
+kmb	equ	8
+eapuf	equ	11h
+eaa1	equ	13h
+eaa2	equ	15h
+;
+	PAGE	66
+start::	jr	sp000
+	defb	'ver3.3 17.7.85 cinitd'
+sp000::	LD	SP,SPBER
+;
+	ld	de,n1		; Startnachricht
+	ld	c,9
+	call	5
+;
+goon::	ld	de,n11
+	ld	c,9
+	call	5
+	ld	c,10		; Zeile eingeben
+	ld	de,epuf
+	call	5
+	ld	a,(epuf+1)
+	or	a
+	jr	z,goon
+;
+	ld	a,(epuf+2)
+	and	11011111b
+	cp	'B'
+	jr	z,sp001
+	cp	'C'
+	jr	nz,goon
+	ld	ix,(eaa2)	; e/a-tabelle 2
+	jr	sp002
+sp001::	ld	ix,(eaa1)	; e/a-tabelle 1
+;
+sp002::	ld	a,(ix)
+	cp	10h
+	jr	z,sp003
+	ld	de,n4
+	ld	c,9
+	call	5
+	jp	0
+;
+sp003::	ld	c,9
+	ld	de,n2
+	call	5
+;
+	ld	c,10
+	ld	de,epuf
+	call	5
+;
+	ld	a,(epuf+1)
+	or	a
+	jp	z,0		; -> Abbruch
+	ld	a,(epuf+2)
+	and	11011111b
+	cp	'J'
+	jp	nz,0		; -> Abbruch
+;
+	LD	A,31H		; RESERVIEREN EIN
+	CALL	KMB
+	JP	NZ,SP12
+;
+	LD	A,21H		; RUECKSPULEN
+	CALL	KMB
+	JP	NZ,SP12
+;
+sp00::	call	0bh		; auf ende des rueckspulens warten
+;
+	LD	HL,ABER
+	LD	DE,ABER+1
+	LD	BC,255
+	LDIR
+	XOR	A		; SENT = 0/0
+	LD	(REC),A
+	LD	(BLK),A
+;
+SP03::	CALL	SENT		; SENT SCHREIBEN
+	LD	HL,1
+	ld	(ix+ealen),l
+	ld	(ix+ealen+1),h
+	ld	hl,(eapuf)	; hilfspuffer
+	ld	(ix+eaadr),l
+	ld	(ix+eaadr+1),h
+	ld	de,aber
+	ld	bc,100h
+	ex	de,hl
+	ldir			; in den hilfspuffer uebertragen
+	LD	A,0
+	CALL	KMB		; DATENBLOCK SCHREIBEN
+	JP	NZ,SP12
+;
+	LD	A,(REC)
+	INC	A
+	LD	(REC),A
+	CP	8
+	JR	C,SP03
+;
+	call	bm		; blockmarke schreiben
+	ld	hl,blk		; blk erhoehen, rec = 0
+	inc	(hl)
+	xor	a
+	ld	(rec),a
+	JR	SP03
+;
+;----------------------------------------------------------------------
+;
+BM::	LD	A,51H		; BANDMARKE SCHREIBEN
+	CALL	KMB
+	JP	NZ,SP12
+	RET
+;
+;----------------------------------------------------------------------
+;
+SENT::	LD	HL,0C00H	; SENT SCHREIBEN
+	ld	(ix+ealen),l
+	ld	(ix+ealen+1),h
+	ld	hl,(eapuf)	; hilfspuffer
+	ld	(ix+eaadr),l
+	ld	(ix+eaadr+1),h
+	ld	de,aber
+	ex	de,hl
+	ld	bc,100h
+	ldir
+	LD	A,0
+	CALL	KMB
+	JP	NZ,SP12
+	RET
+;
+;----------------------------------------------------------------------
+;
+SP12::	LD	A,21H		; RUECKSPULEN
+	CALL	KMB
+	LD	A,41H		; RESEVIEREN AUS
+	CALL	KMB
+;
+	ld	a,(blk)
+	dec	a
+	and	0f0h
+	or	a
+	rra
+	rra
+	rra
+	rra
+	cp	10
+	jr	c,sp13
+	add	a,7
+sp13::	add	a,30h
+	ld	(n3+2),a
+	ld	a,(blk)
+	dec	a
+	and	0fh
+	cp	10
+	jr	c,sp14
+	add	a,7
+sp14::	add	a,30h
+	ld	(n3+3),a
+;
+	ld	de,n5		; nach weiterer Kassette fragen
+	ld	c,9
+	call	5
+	ld	de,epuf
+	ld	c,10
+	call	5
+	ld	a,(epuf+1)
+	or	a
+	jp	z,goon
+	ld	a,(epuf+2)
+	and	0bfh
+	cp	'J'
+	jp	z,goon
+;
+	LD	DE,N3		; ENDENACHRICHT
+	LD	C,9
+	CALL	5
+	JP	0
+;
+;----------------------------------------------------------------------
+;
+eaadr	equ	7
+ealen	equ	9
+;
+;
+;----------------------------------------------------------------------
+;
+N1::	DEFB	0AH,0DH,'Kassetteninitialisierung V3.3 vom 17.7.1985'
+	defb	'  (M. Krzikalla)',0ah,0dh,'$'
+;
+n11::	defb	0ah,0dh
+	defb	'In welchem Laufwerk soll initialisiert werden? (b|c): $'
+;
+n2::	defb	0ah,0dh,'Ist angegebenes Laufwerk entladen und enthaelt es'
+	defb	0ah,0dh,'die zu initialisierende Kassette? (j|n): $'
+;
+n3::	defb	0ah,0dh,0,0,'h 2K-Bloecke geschrieben',0ah,0ah,0dh
+	DEFB	'Ende',0AH,0DH,'$'
+;
+n4::	defb	0ah,0dh,'Das angegebene Laufwerk muss entladen sein!'
+	defb	0ah,0dh,'abort',0ah,0ah,'$'
+;
+n5::	defb	0ah,0ah,'Soll weitere Kassette initialisiert werden? (j/n): j'
+	defb	8,'$'
+;
+;----------------------------------------------------------------------
+;
+epuf::	defb	1,0,0
+;
+;----------------------------------------------------------------------
+;
+ABER::	DEFB	0E5H
+BLK::	DEFB	0
+REC::	DEFB	0
+	DEFS	253
+;
+;----------------------------------------------------------------------
+;
+	DEFS	100
+SPBER::	DEFS	0
+	END
+

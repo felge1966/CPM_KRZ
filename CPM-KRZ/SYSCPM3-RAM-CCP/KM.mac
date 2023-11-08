@@ -1,0 +1,1110 @@
+; Kassettenbedienung K5221
+;
+; 01.11.1985 (M. Krzikalla)
+
+ if1
+    .printx * Kassetten
+    if anzakb eq 0
+      .printx *     01.11.85 - keine Kassetten
+    endif
+    if anzakb eq 1
+      .printx *     01.11.85 - 1 x K5221 als B: und C:
+    endif
+    if anzakb eq 2
+      .printx *     01.11.85 - 2 x K5221 als B:, C:, D:, E:
+    endif
+    if anzakb eq 3
+      .printx *     01.11.85 - 3 x K5221 als B:, C:, D:, E:, F:, G:
+    endif
+ endif
+
+erranz	equ	10		; Anzahl der Fehlerwiederholungen
+
+; Kassetten initialisieren
+; ------------------------
+;
+ if anzakb gt 0
+kmbint::call	kmbini
+	ld	a,(ix+2)	; existiert diese AKB?
+	add	a,4
+	ld	c,a
+	in	a,(c)
+	cp	83h
+	ret	nz		; -> nein
+	ld	(ix+kmexis),1
+	ld	(ix+kmexis-eatab1+eatab2),1
+	ret
+ endif
+;
+km.kalt	macro
+km.kal::xor	a
+	ld	(qabort),a	; Abort erlauben
+ if anzakb gt 0
+	setkmb
+	ld	ix,eatab1
+	call	kmbint
+ endif
+ if anzakb gt 1
+	ld	ix,eatab3
+	call	kmbint
+ endif
+ if anzakb gt 2
+	ld	ix,eatab5
+	call	kmbint
+ endif
+ if anzakb gt 0
+	reskmb
+	ld	a,10h		; status nicht bereit setzen
+	ld	(eatab1),a
+	ld	(eatab2),a
+ endif
+ if anzakb gt 1
+	ld	(eatab3),a
+	ld	(eatab4),a
+ endif
+ if anzakb gt 2
+	ld	(eatab5),a
+	ld	(eatab6),a
+ endif
+ if anzakb gt 0
+	xor	a
+	ld	(eatab1+gelade),a
+	ld	(eatab2+gelade),a
+ endif
+ if anzakb gt 1
+	ld	(eatab3+gelade),a
+	ld	(eatab4+gelade),a
+ endif
+ if anzakb gt 2
+	ld	(eatab5+gelade),a
+	ld	(eatab6+gelade),a
+ endif
+	endm
+
+km.warm	macro
+km.war::
+	endm
+	page	66
+; Bedienung der Lade-/Entladetasten
+; ---------------------------------
+;
+ if anzakb gt 0
+km.ka1::ld	ix,eatab1
+	ld	hl,dphb
+	ld	de,dphc1
+
+km.le::	push	hl		; Kassette laden/entladen
+	push	de
+	ld	a,(ix+kmexis)
+	or	a
+	jr	z,km.le2	; -> AKB existiert nicht
+	ld	a,(ix+gelade)
+	or	a
+	ld	c,(ix-pcbadr)
+	ld	b,(ix-pcbadr+1)
+	push	bc
+	pop	iy
+	jr	nz,km.le1	; -> entladen
+	call	clad		; laden
+	pop	de
+	pop	hl
+	jr	nz,km.le3	; -> fehler beim laden
+	ld	(hl),e		; Geraet als geladen in dph-tabelle eintragen
+	inc	hl
+	ld	(hl),d
+	jr	km.le3
+;
+km.le1::call	centl		; entladen
+km.le2::pop	de
+	pop	hl
+	ld	(hl),0		; Geraet aus dph-tabelle streichen
+	inc	hl
+	ld	(hl),0
+km.le3::ret
+
+km.ka2::ld	ix,eatab2
+	ld	hl,dphc
+	ld	de,dphc2
+	jr	km.le
+ endif
+
+ if anzakb gt 1
+km.ka3::ld	ix,eatab3
+	ld	hl,dphd
+	ld	de,dphc3
+	jr	km.le
+
+km.ka4::ld	ix,eatab4
+	ld	hl,dphe
+	ld	de,dphc4
+	jr	km.le
+ endif
+
+ if anzakb gt 2
+km.ka5::ld	ix,eatab5
+	ld	hl,dphf
+	ld	de,dphc5
+	jr	km.le
+
+km.ka6::ld	ix,eatab6
+	ld	hl,dphg
+	ld	de,dphc6
+	jr	km.le
+ endif
+
+; Abortbedienung
+; --------------
+;   AKB initialisieren und gueltige Reservierungen einschalten
+;
+km.abo::
+ if anzakb gt 0
+	ld	ix,eatab1	; falsche reservierungen ausschalten
+	setkmb
+	call	kmbini
+	reskmb
+	ld	a,(ix+gelade)
+	or	a
+	jr	z,km.ab1
+	ld	a,31h		; reservieren ein
+	call	kmb
+km.ab1::ld	ix,eatab2
+	ld	a,(ix+gelade)
+	or	a
+	jr	z,km.ab2
+	ld	a,31h		; reservieren ein
+	call	kmb
+ endif
+km.ab2::
+ if anzakb gt 1
+	ld	ix,eatab3	; falsche reservierungen ausschalten
+	setkmb
+	call	kmbini
+	reskmb
+	ld	a,(ix+gelade)
+	or	a
+	jr	z,km.ab3
+	ld	a,31h		; reservieren ein
+	call	kmb
+km.ab3::ld	ix,eatab4
+	ld	a,(ix+gelade)
+	or	a
+	jr	z,km.ab4
+	ld	a,31h		; reservieren ein
+	call	kmb
+ endif
+km.ab4::
+ if anzakb gt 2
+	ld	ix,eatab5	; falsche reservierungen ausschalten
+	setkmb
+	call	kmbini
+	reskmb
+	ld	a,(ix+gelade)
+	or	a
+	jr	z,km.ab5
+	ld	a,31h		; reservieren ein
+	call	kmb
+km.ab5::ld	ix,eatab6
+	ld	a,(ix+gelade)
+	or	a
+	jr	z,km.ab6
+	ld	a,31h		; reservieren ein
+	call	kmb
+ endif
+;
+km.ab6::ret
+	page	66
+ if anzakb gt 0
+; lesen / schreiben Kassetten geblockt
+; ------------------------------------
+; lesen
+; +++++
+;
+rdkmb::	ld	a,(ix+gelade)	; Test, ob Kassette noch geladen ist
+	or	a
+	jr	z,rdk03		; -> nein, Fehler
+	ld	a,(trk)
+	or	a
+	jp	nz,deblck	; -> nicht aus hs lesen
+	ld	de,(dma)	; aus dpuf lesen
+	call	diradr
+	ld	b,128
+rdk01::	setdir
+	ld	a,(hl)
+	resdir
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	rdk01
+	xor	a
+	ret
+;
+hrdkmb::ld	a,erranz
+	ld	(rderr),a
+rdk01a::call	cposx
+	jr	nz,rdk03	; -> fehler melden
+	call	lesen
+	jr	z,rdk04
+rdk02::	ld	a,(rderr)	; weitere versuch?
+	dec	a
+	ld	(rderr),a
+	jr	nz,rdk01a	; -> ja
+rdk03::	xor	a		; fehler melden
+	inc	a
+	ret
+rdk04::	ld	a,(ix+ealen)
+	cp	1
+	jr	nz,rdk02
+	ld	b,a
+	ld	a,(ix+ealen+1)
+	or	a
+	jr	nz,rdk02
+	ld	c,a
+	ld	l,(ix+eaadr)
+	ld	h,(ix+eaadr+1)
+	ld	e,(iy+hstbuf)
+	ld	d,(iy+hstbuf+1)
+	setkmb
+	sethbf
+	ldir
+	reshbf
+	reskmb
+	xor	a
+	ret
+	page	66
+; schreiben
+; +++++++++
+;
+wrkmb::	ld	a,(ix+gelade)	; test, ob kassette noch geladen ist
+	or	a
+	jr	z,wrk02		; -> nein
+	ld	a,(trk)
+	or	a
+	jp	nz,block	; -> nicht nach dir im hs schreiben
+;
+	call	diradr
+	ex	de,hl		; in dpuf schreiben
+	ld	hl,(dma)
+	ld	(ix+eadzei),1	; es wurde in directory geschrieben
+	ld	b,128
+wrk01::	ld	a,(hl)
+	setdir
+	ld	(de),a
+	resdir
+	inc 	hl
+	inc	de
+	djnz	wrk01
+	xor	a
+	ret
+;
+wrk02::	xor	a		; Fehler melden
+	inc	a
+	ret
+;
+hwrkmb::ld	a,erranz
+	ld	(rderr),a
+wrk03::	call	cposx
+	jr	nz,wrk02	; -> fehler melden
+	ld	(ix+ealen),1
+	ld	(ix+ealen+1),0
+	ld	a,(iy+hstbuf)
+	ld	(ix+eaadr),a
+	ld	a,(iy+hstbuf+1)
+	ld	(ix+eaadr+1),a
+ if kmbvers eq 13
+	ld	a,80h		; schreiben ohne fehlerwiederholung
+ else
+	ld	a,0		; schreiben mit fehlerwiederholung
+ endif
+	call	kmb
+	ret	z		; -> alles ok
+	ld	a,(rderr)	; weiterer versuch?
+	dec	a
+	ld	(rderr),a
+	jr	nz,wrk03	; -> ja
+	jr	wrk02		; -> nein
+;
+	page	66
+; Unterprogramme lesen/schreiben
+; ++++++++++++++++++++++++++++++
+;
+cposx::	ld	l,(iy+hstsec)
+	ld	h,(iy+hsttrk)
+	ld	(was),hl
+	call	cpos
+	ret
+;
+;----------------------------------------------------------------------
+;
+diradr::ld	hl,(sec)	; in hl diradr bilden
+	dec	hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	c,(ix+eadpuf)	; bc = dpuf
+	ld	b,(ix+eadpuf+1)
+	add	hl,bc
+	ret
+	page	66
+;   Kassettenroutinen   laden / entladen / positionieren
+;   ----------------------------------------------------
+;
+; kassette laden geblockt
+; +++++++++++++++++++++++
+;
+clad::	ld	a,31h		; reservieren ein
+	call	kmb
+	bit	4,(ix+eastat)
+	jr	nz,sp26
+;
+	call	rucksp		; rueckspulen
+	call	endruc		; auf ende warten
+;
+	call	filpar
+sp21::	push	de		; dirpufferadresse
+	call	readhst		; 8 mal 256 byte lesen
+	pop	de
+	jr	nz,sp25		; -> fehler
+	ld	l,(iy+hstbuf)
+	ld	h,(iy+hstbuf+1)
+	ld	bc,256
+	sethbf
+	setdir
+	ldir			; von hostbuf auf cpu in dirbuf uebertr.
+	reshbf
+	resdir
+	inc	(iy+hstsec)
+	bit	3,(iy+hstsec)	; 0/8 schon erreicht?
+	jr	z,sp21		; -> nein
+;
+	xor	a		; laden ok
+	ld	(ix+eadzei),a	; in directory wurde noch nicht geschrieben
+	ld	(iy+hstact),a	; host buffer inactive
+	ld	(iy+unacnt),a	; no unallocated recs
+	ld	(ix+gelade),1	; kassette ist geladen
+	ret
+;
+;--------------------------------
+;
+sp25::	call	rucksp		; fehler beim laden
+sp26::	ld	a,41h		; reservieren aus
+	call	kmb
+	xor	a
+	ld	(ix+gelade),a	; kassette ist nicht geladen
+	inc	a
+	ret
+;
+	page	66
+; kassette entladen geblockt
+; ++++++++++++++++++++++++++
+;
+centl::	ld	a,(iy+hstact)	; ist puffer aktiv?
+	or	a
+	jr	z,sp301		; -> nein
+	ld	a,(iy+hstwrt)	; wurde in puffer geschrieben?
+	or	a
+	jr	z,sp301
+	call	writehst	; ja, puffer entleeren
+	jr	z,sp301
+	ld	hl,ceerro
+	ld	b,ceerre-ceerro
+sp300::	push	hl
+	push	bc
+	ld	c,(hl)
+	call	co.ch
+	pop	bc
+	pop	hl
+	inc	hl
+	djnz	sp300
+sp301::	ld	a,(ix+eadzei)	; wurde directory veraendert?
+	or	a
+	jr	z,sp32		; -> nein
+	call	rucksp		; rueckspulen
+	call	endruc		; auf ende warten
+	call	filpar
+	ex	de,hl		; dirpufferadresse
+sp31::	ld	e,(iy+hstbuf)	; aus dirpuffer in host buffer uebertragen
+	ld	d,(iy+hstbuf+1)
+	ld	bc,256
+	sethbf
+	setdir
+	ldir			; aus dirbuf in hostbuf auf cpu uebertragen
+	reshbf
+	resdir
+	push	hl
+	call	writehst
+	pop	hl
+	jr	nz,sp25		; -> fehler
+	inc	(iy+hstsec)
+	bit	3,(iy+hstsec)	; 0/8 erreicht?
+	jr	z,sp31		; -> nein
+sp32::	call	rucksp		; rueckspulen
+	ld	a,41h		; reservieren aus
+	call	kmb
+	ld	(ix+gelade),0	; kassette ist nicht geladen
+	ret
+ceerro::defb	lf,'Entladefehler',cr,lf
+ceerre::
+	page	66
+; UP's
+; ++++
+;
+rucksp::ld	a,21h
+	call	kmb
+	jr	nz,rucksp
+	ret
+endruc::setkmb 
+	call	kmbruc		; kmb-bereitroutine
+	jr	c,endruc	; -> nicht bereit
+	reskmb
+	ret
+lesen::	xor	a
+	ld	(richtu),a
+ if kmbvers eq 13
+	ld	a,82h		; lesen ohne fehlerwiederholung
+ else
+	ld	a,2
+ endif
+	call	kmb
+	ret
+konlen::ld	a,(ix+ealen)
+	cp	b
+	ret	nz
+	ld	a,(ix+ealen+1)
+	cp	c
+	ret
+konsent::push	bc
+	ld	bc,12
+	call	konlen
+	pop	bc
+	ret	nz
+	push	iy
+	push	hl
+	ld	l,(ix+eaadr)	; iy := (adr)
+	ld	h,(ix+eaadr+1)
+	ld	(arb),hl
+	ld	iy,(arb)
+	pop	hl
+	setkmb
+	ld	a,(iy+1)
+	reskmb
+	cp	d
+	jr	nz,konse1
+	setkmb
+	ld	a,(iy+2)
+	reskmb
+	cp	e
+konse1::pop	iy
+	ret
+
+filpar::ld	(iy+hstsec),0
+	ld	(iy+hsttrk),0
+	ld	(ix+eawovo),0
+	ld	(ix+eawovo+1),0
+	ld	e,(ix+eadpuf)
+	ld	d,(ix+eadpuf+1)
+	ret
+	page	66
+; kassette positionieren
+; ++++++++++++++++++++++
+;
+cpos::	ld	a,erranz	; nach erranz fehlversuchen abbruch
+	ld	(errcou),a
+;
+sp40::	ld	bc,(was)
+	ld	e,(ix+eawovo)
+	ld	d,(ix+eawovo+1)
+	ld	a,e		; steht mb vor bandmarke?
+	cp	8
+	jr	c,sp41
+;
+	call	lesen		; ja
+	inc	d
+	ld	e,0
+;
+sp41::	ld	a,b
+	cp	d
+	jr	nz,sp45
+	ld	a,c
+	cp	e
+	jr	nz,sp43
+;
+; === was = wovor
+;
+	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+	call	konsent
+	jr	nz,sp42		; -> fehler: mb stand an falscher stelle
+;
+	inc	e
+	ld	(ix+eawovo),e
+	ld	(ix+eawovo+1),d
+	xor	a
+	ret
+;
+;----------------
+;
+sp42::	call	fehler		; fehlerbehandlung
+	ld	hl,errcou	; nochmaliger versuch?
+	dec	(hl)
+	jr	nz,sp40		; -> ja
+;
+	xor	a		; fehler zurueckmelden
+	inc	a
+	ret
+;
+;----------------
+;
+sp43::	ld	a,c
+	cp	e
+	jr	nc,sp44
+;
+; === was.blk = wovor.blk  and  was.rec < wovor.rec
+;
+	ld	a,1
+	ld	(richtu),a
+	ld	a,15h		; 2 bloecke ruecksetzen
+	call	kmb
+	jr	nz,sp42		; -> fehler: beim record ruecksetzen
+	ld	a,15h
+	call	kmb
+	jr	nz,sp42		; -> fehler: beim record ruecksetzen
+	dec	e		; wovor.rec := wovor.rec - 1
+	jr	sp41
+;
+;----------------
+;
+; === was.blk = wovor.blk  and  was.rec > wovor.rec
+;
+sp44::	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+;
+	call	konsent
+	jr	nz,sp42		; -> fehler: mb stand an falscher stelle
+;
+	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+;
+	inc	e		; wovor.rec := wovor.rec + 1
+	jr	sp41
+;
+;----------------
+;
+sp45::	jr	nc,sp46
+;
+; === was.blk < wovor.blk
+;
+	ld	a,d
+	sub	b
+	push	af
+	ld	a,(errcou)	; falls nur noch 5 Versuche ausstehen
+	cp	5		; um eine bandmarke mehr zuruecksetzen
+	jr	c,sp451
+	pop	af
+	inc	a
+	push	af
+sp451::	pop	af		; evtl. bei bedarf inc a
+	inc	a
+	ld	(ix+eabm),a	; (anzbm) := wovor - was + 1
+	ld	a,1
+	ld	(richtu),a
+	ld	a,75h		; um wovor-was+1 bm ruecksetzen
+	call	kmb
+	jr	nz,sp42		; -> fehler: beim bm-ruecksetzen
+;
+	ld	d,b
+	xor	a
+	ld	e,a		; wovor := was.blk / 0
+	jr	sp41
+;
+;----------------
+;
+sp46::	ld	a,d
+	inc	a
+	cp	b
+	jr	nz,sp48
+;
+; === was.blk = wovor.blk+1
+;
+sp47::	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+;
+	push	bc
+	ld	bc,0
+	call	konlen
+	pop	bc
+	jr	nz,sp47		; -> keine bandmarke, weitermachen
+;
+	inc	d
+	xor	a
+	ld	e,a		; wovor := wovor.blk+1 / 0
+	jp	sp41
+;
+;----------------
+;
+; === was.blk > wovor.blk+1
+;
+sp48::	ld	a,(errcou)	; falls nur noch 5 fehlversuche
+	cp	6		; langsam vorpositionieren
+	jr	c,sp47
+	ld	a,b
+	sub	d
+	ld	(ix+eabm),a	; (anzbm) := was - wovor
+	xor	a
+	ld	(richtu),a
+	ld	a,71h		; um was-wovor bm vorsetzen
+	call	kmb
+	jp	nz,sp42		; -> fehler: beim bm-vorsetzen
+;
+	ld	d,b
+	xor	a
+	ld	e,a		; wovor := was.blk / 0
+	jp	sp41
+;
+;----------------------------------------------------------------------
+;
+fehler::ld	a,16h		; fehlerbehandlung
+	cp	(ix+eafehl)	; ----------------
+	jr	nz,fehl01	; ende der aufzeichnungen auf dieser seite
+	ld	a,(richtu)
+	or	a
+	jr	z,fehl00
+	call	rucksp		; am anfang zur sicherheit ruckspulen
+	call	endruc
+	ld	a,41h		; reservieren aus
+	call	kmb
+	ld	a,31h		; reservieren ein
+	call	kmb
+	jr	fehl01
+fehl00::ld	b,16		; um 16 records zuruecksetzen
+fehl0a::ld	a,15h
+	call	kmb
+	djnz	fehl0a
+;
+fehl01::call	lesen
+	jr	nz,fehler
+	ld	bc,12
+	call	konlen		;   solange lesen bis sent gefunden
+	jr	nz,fehler	;   dann vor sent setzen und wovor
+;
+	push	iy
+	ld	l,(ix+eaadr)	; iy := (adr)
+	ld	h,(ix+eaadr+1)
+	ld	(arb),hl
+	ld	iy,(arb)
+	setkmb
+	ld	d,(iy+1)
+	ld	e,(iy+2)
+	reskmb
+	pop	iy
+	ld	(ix+eawovo),e
+	ld	(ix+eawovo+1),d
+;
+	ld	a,1
+	ld	(richtu),a
+	ld	a,15h
+	call	kmb		; einen record ruecksetzen
+	jr	nz,fehler	; -> fehler: beim record ruecksetzen
+	ret
+;
+;----------------------------------------------------------------------
+;
+kmb::	ld	(ix+eakom),a	; (kom) := a
+	push	bc
+	push	de
+	push	hl
+	xor	a
+	ld	(kmwart),a
+	setkmb
+	sethbf
+	ld	a,1		; abort nicht erlaubt
+	ld	(aboerl),a
+	call	kmbrob
+kmb01::	ld	a,(kmwart)
+	or	a
+	jr	z,kmb01
+	reskmb
+	reshbf
+	xor	a
+	ld	(aboerl),a	; abort wieder erlauben
+	ld	a,(qabort)	; liegt abortanforderung an?
+	or	a
+	jr	z,kmb02		; -> nein,  kein abort
+	xor	a
+	ld	(qabort),a
+	ld	a,(iy+hstwrt)	; if no pending write flush buffer
+	or	a
+	jr	nz,kmb03
+	ld	(iy+hstact),0
+kmb03::	jp	abort
+;
+kmb02::	pop	hl
+	pop	de
+	pop	bc
+	bit	7,(ix+eastat)
+	ret
+;
+kmbep::	push	af
+	ld	a,1
+	ld	(kmwart),a
+	pop	af
+	ret
+;
+;----------------------------------------------------------------------
+;
+kmwart::defb	0		; 0 - kmb arbeitet noch; 1 - kmb fertig
+was::	defw	0
+errcou::defb	0		; zaehler fuer fehlversuche
+arb::	defw	0
+richtu::defb	0		; 0 - es wurde vorwaerts gelesen
+;				; 1 - es wurde rueckwaerts gelesen
+	page	66
+; user-unterprogramme zur Verbindung mit KMB-BAMOS
+; ------------------------------------------------
+
+; +++++++++++++++++++
+; 1. KMB-BAMOS-Aufruf
+; +++++++++++++++++++
+;
+; in	IX = Adresse der e/a-tabelle
+;       A  = kmb-kommando
+;
+; out   fuehrt das kmb-kommando aus und wartet auf die beendigung
+;	Status in der E/A-Tabelle
+;
+kmbuse::ld	(spret),sp
+	ld	sp,spber1
+	call	kmb
+	ld	sp,(spret)
+	ret
+
+; ++++++++++++++++++++++++++++++
+; 2. Warten auf Ende Rueckspulen
+; ++++++++++++++++++++++++++++++
+;
+; in	IX = Adresse der e/a-tabelle
+;
+; out	wartet dann auf das ende des rueckspulens
+;
+enduse::ld	(spret),sp
+	ld	sp,spber1
+	call	endruc
+	ld	sp,(spret)
+	ret
+
+; ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; 3. Uebernahme der Kassettenpuffers in den Nutzerpuffer
+; ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;
+; in	IX = Adresse der e/a-tabelle
+;       DE = Adresse des Zielbereiches, in den aus dem Kassetten-
+;            puffer der e/a-tabelle uebertragen werden soll
+;
+; out	uebertraegt dann aus dem kmb-puffer in den nutzerpuffer
+;
+getpuf::ld	(spret),sp
+	ld	sp,spber1
+	ld	l,(ix+eaadr)
+	ld	h,(ix+eaadr+1)
+	ld	b,(ix+ealen)
+	ld	c,(ix+ealen+1)
+getpu1::ld	a,b
+	or	c
+	jr	z,getpu2
+	setkmb
+	ld	a,(hl)
+	reskmb
+	ld	(de),a
+	inc	hl
+	inc	de
+	dec	bc
+	jr	getpu1
+;
+getpu2::ld	sp,(spret)
+	ret
+
+ endif
+	page	66
+; Hardware Beschreibungstabellen
+; ------------------------------
+; Kassette 1 - 6 geblockt
+;
+ if anzakb gt 0
+dphc1::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc1
+	defw	allc1
+dphc2::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc2
+	defw	allc2
+ endif
+ if anzakb gt 1
+dphc3::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc3
+	defw	allc3
+dphc4::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc4
+	defw	allc4
+ endif
+ if anzakb gt 2
+dphc5::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc5
+	defw	allc5
+dphc6::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc6
+	defw	allc6
+ endif
+ if anzakb gt 0
+dpblkc::defw	16		; sektoren pro spur
+	defb	3,7,0		; 1k blockung
+	defw	166-1		; 166k kapazitaet
+	defw	63		; 64 dir. entries
+	defb	0c0h,0		; 2 belegte bloecke durch dir.
+	defw	16		; 16 dir.entries pruefen
+	defw	0		; 0 spuren durch system belegt
+ endif
+	page	66
+; E/A-Tabellen Kassetten
+; ----------------------
+;
+; Aufbau des geraetespezifischen Teiles der E/A-Tabelle
+;
+eastat	equ	0	; BAMOS-Arbeitszellen KMB
+eafehl	equ	1	; Fehlerkennzeichen
+eakom	equ	4	; Kommando
+eaep	equ	5	; Adresse der Fertigroutine
+eaadr	equ	7	; Transferadresse
+ealen	equ	9	; Transferlaenge
+eabm	equ	10	; Anzahl der Blockmarken
+eawied	equ	11	; Anzahl der Fehlerwiederholungen
+eaverl	equ	12	; Anzahl der Blocklueckenverlaengerungen
+;
+eadpuf	equ	13	; Directorypufferung Kassetten
+eadzei	equ	15	; Anzeiger, ob Kassettenverzeichnis veraendert wurde
+eawovo	equ	16	; Positionierung Kassetten
+gelade	equ	18	; Anzeiger, ob die Kassette geladen ist
+kmexis	equ	19	; Anzeiger, ob AKB existiert (1=existiert)
+
+ if anzakb gt 0
+	defw	pcbc1		; Adresse des Pufferkontrollblockes Kass.1
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab1::defb	0,0,pkmb1,1	; Laufwerk 1
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir1
+	defb	0		; Anzeiger, ob in directory geschrieben (1=ja)
+	defw	0		; wovor blk/rec
+	defb	0		; Anzeiger, ob die Kassette geladen ist (1=ja)
+	defb	0		; Anzeiger, ob AKB existiert
+
+pcbc1::	defw	kasbu1		; Adresse des hostbuffer
+	defb	'B'-'A'		; Nr. der dev, welche den Puffer gerade belegt
+	defw	0		; Nr. des Pufferinhaltes als hostwert
+	defb	0		;               - " -
+	defb	0		; Puffer gefuellt (=0 nein)
+	defb	0		; Puffer beschrieben (=1 es wurde)
+	defb	0		; Anzahl der noch unalloc. recs
+	defw	0		; Spurnr. des naechsten unalloc. recs
+	defb	0		; Sektornr.     - " -
+;
+	defw	pcbc2		; Adresse des Pufferkontrollblockes Kass.2
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab2::defb	0,0,pkmb1,2	; Laufwerk 2
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir2
+	defb	0
+	defw	0
+	defb	0,0
+
+pcbc2::	defw	kasbu2		; Adresse des hostbuffer
+	defb	'C'-'A'
+	defs	9,0
+ endif
+
+ if anzakb gt 1
+	defw	pcbc3		; Adresse des Pufferkontrollblockes Kass.3
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab3::defb	0,0,pkmb2,1	; Laufwerk 3
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir3
+	defb	0
+	defw	0
+	defb	0,0
+
+pcbc3::	defw	kasbu3		; Adresse des hostbuffer
+	defb	'D'-'A'
+	defs	9,0
+;
+	defw	pcbc4		; Adresse des Pufferkontrollblockes Kass.4
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab4::defb	0,0,pkmb2,2	; Laufwerk 4
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir4
+	defb	0
+	defw	0
+	defb	0,0
+
+pcbc4::	defw	kasbu4		; Adresse des hostbuffer
+	defb	'E'-'A'
+	defs	9,0
+;
+ endif
+;
+ if anzakb gt 2
+	defw	pcbc5		; Adresse des Pufferkontrollblockes Kass.5
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab5::defb	0,0,pkmb3,1	; Laufwerk 5
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir5
+	defb	0
+	defw	0
+	defb	0,0
+
+pcbc5::	defw	kasbu5		; Adresse des hostbuffer
+	defb	'F'-'A'
+	defs	9,0
+;
+	defw	pcbc6		; Adresse des Pufferkontrollblockes Kass.6
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab6::defb	0,0,pkmb3,2	; Laufwerk 6
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir6
+	defb	0
+	defw	0
+	defb	0,0
+
+pcbc6::	defw	kasbu6		; Adresse des hostbuffer
+	defb	'G'-'A'
+	defs	9,0
+;
+ endif
+
+; Arbeitsbereiche
+; ---------------
+;
+ if anzakb gt 0
+rderr::	defb	0		; Fehlerzaehler
+;
+ if1
+ ifndef kmbpuf
+ramend	defl	ramend-100h
+kmbpuf	equ	ramend
+ endif
+ramend	defl	ramend-21
+allc1	equ	ramend
+ramend	defl	ramend-16
+chkc1	equ	ramend
+ramend	defl	ramend-21
+allc2	equ	ramend
+ramend	defl	ramend-16
+chkc2	equ	ramend
+ endif
+ endif
+
+ if anzakb gt 1
+ if1
+ramend	defl	ramend-21
+allc3	equ	ramend
+ramend	defl	ramend-16
+chkc3	equ	ramend
+ramend	defl	ramend-21
+allc4	equ	ramend
+ramend	defl	ramend-16
+chkc4	equ	ramend
+ endif
+ endif
+
+ if anzakb gt 2
+ if1
+ramend	defl	ramend-21
+allc5	equ	ramend
+ramend	defl	ramend-16
+chkc5	equ	ramend
+ramend	defl	ramend-21
+allc6	equ	ramend
+ramend	defl	ramend-16
+chkc6	equ	ramend
+ endif
+ endif
+
+; Tabellenzuweisungen
+; -------------------
+
+; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+; !!									     !!
+; !! Wenn die Zuweisungen auf andere  Geraete  geaendert werden,  so muessen !!
+; !! in pcbc1:, pcbc2:,... pcbc6: ebenfalls die Geraetnamen geaendert werden !!
+; !!									     !!
+; !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+ if anzakb gt 0
+ixb	defl	eatab1
+ixc	defl	eatab2
+ endif
+
+ if anzakb gt 1
+ixd	defl	eatab3
+ixe	defl	eatab4
+ endif
+
+ if anzakb gt 2
+ixf	defl	eatab5
+ixg	defl	eatab6
+ endif
+;
+

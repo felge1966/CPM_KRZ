@@ -1,0 +1,1368 @@
+; Floppybedienung fuer K1520 mit AMF 5120 und ZRE K2521
+; -----------------------------------------------------
+;
+; 01.04.1987 (M. Krzikalla)
+;            - Floppyabschaltung mit CTC
+; 13.08.1987
+;            - doppelseitiger Formate auf LW0
+; 02.09.1987
+;            - Modul verkeinert
+; 24.10.1987
+;            - Stepzeiten fuer BASF
+; 02.12.1987
+;            - MS/DOS 360K und 720K eingefuegt
+;            - physischen Teil des Treibers auf max. 9 Sektoren erweitert
+; 23.01.1988 -             -"-                      18        -"-
+; 02.02.1988 - 200K Format
+
+ if1
+ .printx * Floppy
+ .printx *     02.02.88 - 5" an AMF K5120 mit ZRE K2521
+ .printx *                --- Krzikalla Version 3.1 ---
+ endif
+
+; Initialisierungen
+; -----------------
+;
+; fl.kalt macro ist im physischen Teil des Treibers
+;
+fl.warm	macro
+fl.war::
+; pruefen, ob der/die hostbuffer noch auszugeben sind
+	ld	iy,pcbfl	; hostbuffer 1 aktiv?
+	ld	a,(iy+hstact)
+	or	a
+	jr	z,fl.wa1	; -> nein
+	ld	a,(iy+hstwrt)	; hostbuffer 1 veraendert?
+	or	a
+	jr	z,fl.wa0	; -> nein, also ohne Ausgabe verwerfen
+	ld	a,(pcbfl+hstdev); hostbuffer 1 ausgeben
+	call	setix1
+	call	fl.hwr
+fl.wa0::ld	(iy+hstact),0	; hostbuffer 1 enthaelt jetzt keine Daten mehr
+fl.wa1::
+	endm
+
+; Geraetebeschreibungstabellen
+; ----------------------------
+;
+dphfla::defw	0,0,0,0		; 800K-Format
+	defw	dirbf
+	defw	dpblfa
+	defw	chka,alla
+
+dphflb::defw	0,0,0,0		; 800K-Format
+	defw	dirbf
+	defw	dpblfb
+	defw	chkb,allb
+
+dphflc::defw	0,0,0,0		; 780K-Format
+	defw	dirbf
+	defw	dpblfc
+	defw	chkc,allc
+
+dphfld::defw	0,0		; 624K-Format
+	defw	0,0
+	defw	dirbf
+	defw	dpblfd
+	defw	chkd,alld
+
+dphfle::defw	0,0,0,0		; 200K-Format auf 80spur-Geraet
+	defw	dirbf
+	defw	dpblfe
+	defw	chke,alle
+
+;------------------------------------------------------------------------
+
+; Puffersteuerbloecke (IY-Tabellen)
+;
+; fuer alle Floppies nur einen gemeinsamen Puffer
+pcbfl::	defw	flobuf		; Pufferadresse
+	defs	10,0		; hstdev(b), hsttrk(w), hstsec(b)
+				; hstact(b), hstwrt(b)
+				; unacnt(b), unatrk(w), unasec)b)
+
+; IX-Tabellen und dpblk-Tabellen
+;
+; ungeblockt / geblockt
+fl.mtr	equ	0		; Anzahl der Spuren auf dem Laufwerk
+fl.sti	equ	1		; Schrittzeit in 0,1 ms
+fl.anz	equ	2		; Anzahl der auf einmal zu uebertr. Sektoren
+fl.len	equ	3		; Sektorlaengenkode (0-128,1-256,2-512,3-1024)
+fl.skr	equ	4		; Anzeiger, ob Sektornummernkorrektur
+fl.ans	equ	5		; Anzahl der phys. Sektoren pro Seite
+fl.stp	equ	6		; Anzahl der Stepimpulse pro Step
+fl.cpl	equ	7		; 0-ohne Wandlung Spur -> Vorder/Rueckseite
+fl.dnr	equ	8		; physische LW-Nr.
+fl.str	equ	9		; Translate-Tabelle fuer physische Sektornummer
+
+dpblfa::defw	80		; 800K-Format
+	defb	4,0fh,0
+	defw	800/2 - 1
+	defw	192-1
+	defb	0e0h,0
+	defw	48,0
+
+	defw	pcbfl		; 800K-Format
+	defw	fl.hrd
+	defw	fl.hwr
+	defb	16,80,3,7
+	defb	1
+	defw	deblck
+	defw	block
+ixfla::	defb	80		; 80 Spuren
+	defb	30		; 3,0 ms Schrittzeit
+	defb	1		; 1 physischen Sektor auf einmal uebertragen
+	defb	3		; Sektorlaengenkode
+	defb	0		; ohne Sektornummernkorrektur
+	defb	5		; nach 5. Sektor side-Umschaltung
+	defb	1		; einen Stepimpuls pro Spur
+	defb	0		; ohne cpl
+	defb	0		; phys. LW.Nr.
+	defb	01,02,03,04
+	defb	05
+
+;-------------------------------------------------------------------------
+
+dpblfb::defw	80		; 800K-Format
+	defb	4,0fh,0
+	defw	800/2 - 1
+	defw	192-1
+	defb	0e0h,0
+	defw	48,0
+
+	defw	pcbfl		; 790K-Format
+	defw	fl.hrd
+	defw	fl.hwr
+	defb	16,80,3,7
+	defb	1
+	defw	deblck
+	defw	block
+ixflb::	defb	80		; 80 Spuren
+	defb	30		; 3,0 ms Schrittzeit
+	defb	1		; 1 physischen Sektor auf einmal uebertragen
+	defb	3		; Sektorlaengenkode
+	defb	0		; ohne Sektornummernkorrektur
+	defb	5		; nach 5. Sektor side-Umschaltung
+	defb	1		; einen Stepimpuls pro Spur
+	defb	0		; ohne cpl
+	defb	1		; phys. LW.Nr.
+	defb	01,02,03,04
+	defb	05
+
+;-------------------------------------------------------------------------
+
+dpblfc::defw	80		; 780K-Format
+	defb	4,0fh,0		; 2K Blockung
+	defw	780/2 - 1
+	defw	128-1		; 4K Verzeichnis
+	defb	0c0h,0
+	defw	32,2
+
+	defw	pcbfl		; 780K-Format
+	defw	fl.hrd
+	defw	fl.hwr
+	defb	16,80,3,7
+	defb	1
+	defw	deblck
+	defw	block
+ixflc::	defb	80		; 80 Spuren
+	defb	30		; 3,0 ms Schrittzeit
+	defb	1		; 1 physischen Sektor auf einmal uebertragen
+	defb	3		; Sektorlaengenkode
+	defb	0		; ohne Sektornummernkorrektur
+	defb	5		; nach 5. Sektor side-Umschaltung
+	defb	1		; einen Stepimpuls pro Spur
+	defb	0		; ohne cpl
+	defb	1		; phys. LW.Nr.
+	defb	01,02,03,04
+	defb	05
+
+;-------------------------------------------------------------------------
+
+dpblfd::defw	64		; Soemmerda Format
+	defb	4,0fh,0		; 2K Blockung
+	defw	624/2-1
+	defw	128-1
+	defb	0c0h,0
+	defw	32,2
+
+	defw	pcbfl		; Soemmerda-Format
+	defw	fl.hrd
+	defw	fl.hwr
+	defb	16,64,3,7
+	defb	1
+	defw	deblck
+	defw	block
+ixfld::	defb	80		; 80 Spuren
+	defb	30		; 3,0 ms Schrittzeit
+	defb	4		; 4 physische Sektoren auf einmal uebertragen
+	defb	1		; Sektorlaengenkode
+	defb	1		; mit Sektornummernkorrektur
+	defb	16		; nach 16. Sektor side-Umschaltung
+	defb	1		; ein Stepimpuls pro Spur
+	defb	0		; ohne cpl
+	defb	1		; phys. LW.Nr.
+	defb	01,02,03,04
+	defb	05,06,07,08
+	defb	09,10,11,12
+	defb	13,14,15,16
+
+;------------------------------------------------------------------------
+
+dpblfe::defw	40		; 200K Format
+	defb	3,7,0
+	defw	200-1
+	defw	63
+	defb	0c0h,0
+	defw	16,0
+
+	defw	pcbfl		; 200K Format
+	defw	fl.hrd
+	defw	fl.hwr
+	defb	16,40,3,7
+	defb	1
+	defw	deblck
+	defw	block
+ixfle::	defb	40		; 40 Spuren
+	defb	30		; 3,0 ms Schrittzeit
+	defb	1		; 1 physischen Sektor auf einmal uebertragen
+	defb	3		; Sektorlaengenkode
+	defb	0		; ohne Sektornummernkorrektur
+	defb	5		; nach 5. Sektor side-Umschaltung
+	defb	2		; 2 Stepimpulse pro Spur
+	defb	0		; ohne cpl
+	defb	1		; phys. LW.Nr.
+	defb	01,02,03,04
+	defb	05
+
+;------------------------------------------------------------------------
+
+; Geraetezuweisungen phys.->logisch
+; ---------------------------------
+;
+dphga	defl	dphfla	; LW 0  800K
+dphgb	defl	dphflb	; LW 1  800K
+dphgc	defl	dphflc	; LW 1  780K
+dphgd	defl	dphfld	; LW 1  624K
+dphge	defl	dphfle	; LW 1  200K
+
+ixa	defl	ixfla	; LW 0  800K
+ixb	defl	ixflb	; LW 1  800K
+ixc	defl	ixflc	; LW 1  780K
+ixd	defl	ixfld	; LW 1  624K
+ixe	defl	ixfle	; LW 1  200K
+
+;------------------------------------------------------------------------
+
+; Arbeitsbereiche fuer BDOS
+; -------------------------
+;
+ if1
+ramend	defl	ramend-48	; 800K
+chka	equ	ramend
+ramend	defl	ramend-48	; 800K
+chkb	equ	ramend
+ramend	defl	ramend-32	; 780K
+chkc	equ	ramend
+ramend	defl	ramend-32	; 624K
+chkd	equ	ramend
+ramend	defl	ramend-16	; 200K
+chke	equ	ramend
+
+ramend	defl	ramend-50	; fuer 400 Bloecke
+alla	equ	ramend
+ramend	defl	ramend-50	; fuer 400 Bloecke
+allb	equ	ramend
+ramend	defl	ramend-50	; fuer 400 Bloecke
+allc	equ	ramend
+ramend	defl	ramend-40	; fuer 320 Bloecke
+alld	equ	ramend
+ramend	defl	ramend-10	; fuer  80 Bloecke
+alle	equ	ramend
+ endif
+
+;------------------------------------------------------------------------
+
+fl.hrd::ld	a,1		; host buffer lesen
+	jr	fl.h01
+fl.hwr::ld	a,4		; host buffer schreiben
+fl.h01::ld	(ft.kom),a
+
+fl.h02::sethbf
+	ld	a,(ix+fl.dnr)	; physische LW-Nr. eintragen
+	ld	(ft.lwn),a
+
+	xor	a
+	ld	(ft.sid),a	; side = 0
+
+	ld	a,(ix+fl.mtr)
+	ld	(ft.mtr),a	; Anzahl der Spuren
+
+	ld	a,(ix+fl.anz)
+	ld	(ft.anz),a	; 1/4 phys. Sektor zu uebertragen
+
+	ld	a,(ix+fl.len)	; phys. Sektorlaenge
+	ld	(ft.len),a
+
+	ld	l,(iy+hstbuf)	; Transferadresse
+	ld	h,(iy+hstbuf+1)
+	ld	(ft.adr),hl
+
+	ld	a,(ix+fl.skr)	; muss Sektornummer korrigiert werden?
+	or	a
+	ld	a,(iy+hstsec)	; Sektornummer 0..
+	jr	z,fl.h03	; -> nein
+	add	a,a
+	add	a,a
+fl.h03::inc	a		; Sektornummer 1..
+	ld	(ft.sec),a
+
+	sub	(ix+fl.ans)
+	jr	z,fl.h04
+	jp	m,fl.h04
+	ld	(ft.sec),a
+
+	ld	a,1
+	ld	(ft.sid),a	; side = 1
+fl.h04::ld	a,(iy+hsttrk)	; liegt dieser trk auf der Rueckseite?
+	cp	(ix+fl.mtr)
+	jr	c,fl.h05	; -> nein
+	sub	(ix+fl.mtr)	; auf die Rueckseite umstellen
+	push	af
+	ld	a,1
+	ld	(ft.sid),a
+	pop	af
+	sub	39
+	neg
+fl.h05::ld	(ft.trk),a
+
+	ld	a,(ix+fl.cpl)	; sollen ungerade Spuren hinten liegen?
+	or	a
+	jr	z,fl.hx1	; -> nein
+
+	ld	a,(ft.trk)	; ja, aus Spur Spur und Seite machen
+	srl	a
+	ld	(ft.trk),a
+	ld	a,0
+	rla
+	ld	(ft.sid),a
+
+fl.hx1::ld	a,(ix+fl.stp)	; Stepzeit
+	ld	(ft.stp),a
+	ld	a,(ix+fl.sti)	; Stepimpulse
+	ld	(ft.sti),a
+	push	ix
+	ld	a,(ft.sec)	; logische Sektornr.(1..) in physische wandeln
+	ld	c,a
+	ld	b,0
+	add	ix,bc
+	ld	a,(ix+fl.str-1)
+	ld	(ft.sec),a
+	pop	ix
+
+	push	ix
+	call	floppy
+	pop	ix
+
+	or	a
+	jr	z,fl.h06	; kein Fehler
+	cp	'R'
+	jp	z,fl.h02	; -> ja, noch mal versuchen
+
+fl.h06::reshbf
+	ret	z
+
+	ld	a,1		; Fehler melden
+	or	a
+	ret
+
+	page	66
+;------------------------------------------------------------------------------
+; Interface-Routine zum Aufruf der Floppyroutine aus Pascal o. ae.
+;
+; type
+;    twork : record
+;		ft.kom : byte;
+;		ft.adr : word;
+;               ft.lwn : byte;
+;               ft.trk : byte;
+;               ft.sid : byte;
+;               ft.sec : byte;
+;               ft.len : byte;
+;               ft.anz : byte;
+;               ft.stp : byte;
+;               ft.sti : byte;
+;               ft.mtr : byte
+;            end;
+;
+; Function Floppy(work:twork):integer;
+;
+ft.flo::pop	de
+	pop	hl
+	push	de
+	ld	de,ft.kom
+	ld	bc,ft.end-ft.kom
+	ldir    
+	call	floppy
+	ld	l,a
+	ld	h,0
+	ret
+
+	page	66
+;**************************************************************
+; physischer Floppytreiber fuer PC 1715
+; Version 27.08.86
+; M. Krzikalla, W. Dames
+;*************************************************************
+
+; Die Floppy-Bedienung erfolgt im Polling, Interrupt wird nur fuer
+; die time-out Realisierung zum Motorabschalten benutzt.
+; Die Floppy-Arbeit wird durch paralle Interrupts nicht gestoert,
+; im Echtzeitbetrieb waehrend des Transfers eines physischen Sektors
+; arbeitet der Treiber mit DI/EI (bei 1K Sektorlaenge max. 40ms!).
+; Es werden keine Schattenregister benoetigt.
+
+; Zur Realisierung der Motorabschaltung wird der Indexinterrupt des
+; Floppy benutzt.
+; Es wird vorausgesetzt, dass auf einem CTC-Kanal staendig ein
+; 25ms-Takt laeuft (fuer time out Adressmarke benutzt). Dieser wird
+; lediglich gelesen, seine Timer-Konstante muss 240 sein, seine Port-
+; adresse wird ueber 'sysctc+timctc' ermittelt. Es wird gesichert, dass
+; maximal viele 25ms-Interrupts durchkommen, so dass die Verfaelschung
+; einer Software-Uhr durch Diskettentransfer auf Basis dieses Taktes
+; (nur wenn nicht kaskadierte CTC-Kanaele interessant) minimal ist.
+
+; Im Umkleidungsprogramm muss definiert sein:
+; 'sysctc'	Basis-Port-Adresse fuer 25ms Timer-CTC
+; 'timctc'	CTC-Kanal fuer 25ms Timer
+; 'ioflo'       Adresse der Interruptverbindungszelle
+
+; Aufruf:
+; -------
+; Bereitstellung der Parameter auf den (dichten) Bytes:
+;
+;       ft.kom:	defb	0	; bit0 - lesen
+;				     1 - lesen ft.len von beliebigem Sektor
+;				     2 - schreiben (wenn auch bit0: mit verify)
+;;;; z.Zt. nur MFM		     3 - 0-FM; 1-MFM
+;;;; z.Zt. nur 5"		     4 - 0-8"; 1-5"
+;	ft.adr: defw	0	; Transferadresse
+;	ft.lwn: defb	0	; 0..3 phys. Laufwerksnummer
+;	ft.trk: defb	0	; 0..  track
+;	ft.sid: defb	0	; 0..1 side
+;	ft.sec: defb	0	; 1..  sector (beliebig bei SektId lesen)
+;	ft.len: defb	0	; 0..3 Sektorlaenge (belieb. bei SektId les.)
+;	ft.anz: defb	0	; 0..8 Anzahl der zu uebertragenden Sektoren
+;				;      =0: nur Positionieren
+;				;      (beliebig bei SektId lesen)
+;       ft.stp: defb	0	;      Anzahl der Stepimpulse von Spur zu Spur
+;	ft.sti: defb	0	;      Schrittzeit von Spur zu Spur
+;				;      in 0,1ms Einheiten
+;
+;	call	floppy
+;       ...			; in A steht Ergebniskode, ret z bei 00h
+;				; alle Register (auch IX) undef.
+;
+; Ergebniskode (in Reg. A):
+;	00h kein Fehler, Z-Flag gesetzt, sonst Z-Flag rueckgesetzt
+;	'R' Geraet nicht bereit, aber existent
+;	'W' Diskette schreibgeschuetzt
+;	'S' Sektor nicht gefunden
+;	'T' Spurnummer zu gross oder nicht zu finden
+;	'C' CRC-Fehler
+;	'D' LW nicht existent
+;	'U' keine Marke gefunden
+
+; Paramfeld wird an folgenden Stellen veraendert:
+;  Komm. "Lesen Sekt,Id.":	ft.trk .. ft.len gestellt
+;  Komm. "Schreiben mit Verify":ft.kom, bit 0 gleloescht
+;**************************************************
+
+maxlw	equ	4		; Anzahl der Laufwerke (1..4)
+
+;; Adressen der Floppykarte AMF des PC 1715
+;;
+;; Steuer-PIO
+;;flcoad	equ	4		;Port A
+;;flcoac	equ	5
+;;flcobd	equ	6		;Port B
+;;flcobc	equ	7
+;;
+;; Daten-PIO
+;;fldaad	equ	0		;Port A Lese-Daten
+;;fldaac	equ	1
+;;fldabd	equ	2		;Port B Schreib-Daten
+;;fldabc	equ	3
+;;
+;; Select-Latch
+;;flsel	equ	20h	;Bit 7..4: /Select LW3..0; Bit 3..0: /Lock LW 3..0 
+;;flmot	equ	21h	;Bit 7..4: /Motor on (von flsel 7..4 durchgeschaltet)
+
+;; Adressen der Floppykarte AMF K5120 (in EQ.MAC definiert)
+;;
+flcoad	equ	10h
+flcoac	equ	11h
+flcobd	equ	12h
+flcobc	equ	13h
+fldaad	equ	14h		;; Port A Lese-Daten
+fldaac	equ	15h
+fldabd	equ	16h		;; Port B Schreib-Daten
+fldabc	equ	17h
+flsel	equ	18h
+
+;;flctc	equ	80h		;; CTC-Adresse zur Time-out-Ueberwachung
+
+ if1
+
+; Hilfsmakro zur Verzoegerung zwischen 2 IN-Befehlen (Refresh-Zyklen!)
+delay	macro
+	push	ix
+	pop	ix
+	endm
+
+fl.kalt	macro
+fl.kal::
+;; AMF-Initialisierung
+;; Legende:
+;;   Port A
+;;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;;    |   |   |   |   |   |   |   |__ A  /WE  0-Schreiben ein
+;;    |   |   |   |   |   |   |______ A   MK  lesen  0-MFM-A1 Erkennung
+;;    |   |   |   |   |   |                          1-FM-Mark., MFM-C2 Erkenn.
+;;    |   |   |   |   |   |               schreiben  0-Takt fuer MFM
+;;    |   |   |   |   |   |                          1-Marken FM und A1 MFM
+;;    |   |   |   |   |   |__________ A  /SIDE 1-Kopf Seite 0; 0-Kopf Seite 1
+;;    |   |   |   |   |______________ A  /STR 0-AMF aktiv
+;;    |   |   |   |                           1-AMF ausgeschaltet
+;;    |   |   |   |__________________ A   MK1 lesen  0-Informationen einlesen
+;;    |   |   |                                      1-nur 1 einlesen
+;;    |   |   |                            schreiben 0-FM-Daten schreiben
+;;    |   |   |                                      1-MFM und FM-Marken schr.
+;;    |   |   |______________________ A   MR, SD     0-steppen Richtung aussen
+;;    |   |                                          1-Marke-erkannt loeschen
+;;    |   |                                            steppen Richtung innen
+;;    |   |__________________________ A  /HL         0-Kopf geladen
+;;    |                                              1-Kopf entladen
+;;    |______________________________ A  /ST         0-Stepsignal an LW ein
+;;                                                   1-Stepsignal an LW aus
+;;
+;;  Port B
+;;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;;    |   |   |   |   |   |   |   |__ E  /RDY  0-Laufwerk bereit
+;;    |   |   |   |   |   |   |                1-Laufwerk nicht bereit
+;;    |   |   |   |   |   |   |______ E  /MKE  0-Marke erkannt
+;;    |   |   |   |   |   |                    1-Marke nocht nicht erkannt
+;;    |   |   |   |   |   |__________ E  /SYN  ????
+;;    |   |   |   |   |          oder A        0-Takt fuer 8" MFM
+;;    |   |   |   |   |                        1-Takt fuer 5" MFM und 8" FM
+;;    |   |   |   |   |          oder A  /MFM  0-MFM-Aufzeichnung
+;;    |   |   |   |   |                        1-FM-Aufzeichnung
+;;    |   |   |   |   |______________ A   PRE  0-schreiben ohne Prekompensation
+;;    |   |   |   |                            1-schreiben mit         "
+;;    |   |   |   |__________________ E  /FA   0-Fehler in der AMF aufgetreten
+;;    |   |   |                                1-kein Fehler aufgetreten
+;;    |   |   |                  oder A  /FO   0-8"-Disketten
+;;    |   |   |                                1-5"-Disketten     
+;;    |   |   |______________________ E  /WP   0-Schreibschutz ist ein
+;;    |   |                                    1-kein Schreibschutz
+;;    |   |__________________________ E  /FW   0-Laufwerk meldete Fehler
+;;    |                                        1-Laufwerk meldete keinen Fehler
+;;    |______________________________ E  /T0   0-Kopf steht auf Spur 0
+;;                                             1-Kopf steht nicht auf Spur 0
+
+;; PIO-Programmierung
+;; Port Steuer-B
+	ld	a,0cfh
+	out	(flcobc),a
+
+;; fuer PC 1715:
+;;;	ld	a,0e3h		;; eeea aaee
+
+;; fuer K5120:
+	ld	a,0f7h		;; eeee aeee
+
+	out	(flcobc),a
+;; Port Daten-B
+	ld	a,4fh		;; byte-Eingabe
+	out	(fldabc),a
+;; Port Daten-A
+	ld	a,0fh		;; byte-Ausgabe
+	out	(fldaac),a
+;; Port Steuer-A
+	out	(flcoac),a	;; byte-Ausgabe
+	out	(flcoad),a	;; AMF aus
+	ld	a,low ioflo
+	out	(flcoac),a	;; Index-Interrupt
+	ld	a,3
+	out	(flcoac),a	;; verbieten
+
+;; Ermittlung der vorhandenen Laufwerke
+	ld	c,maxlw
+	ld	d,0
+	ld	a,0f7h		;;ohne lock und Motor on
+fl.ka1::rlca
+	out	(flsel),a
+	ex	af,af'
+	ld	b,85		;; max 85 mal steppen
+fl.ka2::ld	a,01011111b	;; steppen mit Kopf oben in Richtung Spur 0
+	out	(flcoad),a
+	ld	a,11011111b
+	out	(flcoad),a
+	in	a,(flcobd)
+	rlca			;; kam Spur0-Signal?
+	jr	nc,fl.ka4	;; -> ja
+	ld	h,8		;; Schrittzeit abwarten
+fl.ka3::dec	l
+	jr	nz,fl.ka3
+	dec	h
+	jr	nz,fl.ka3
+	djnz	fl.ka2		;; -> weiteren Schritt ausfuehren
+	jr	fl.ka5		;; -> LW nicht existent
+  
+fl.ka4::set	6,d		;; Laufwerk existent melden
+fl.ka5::dec	c		;; weiteres LW?
+	jr	z,fl.ka6	;; -> nein
+	rrc	d
+	rrc	d
+	ex	af,af'
+	jr	fl.ka1		;; -> naechstes LW pruefen
+
+fl.ka6::ld	a,d
+	ld	(lwexis),a
+
+;;; fuer PC 1715:
+;;;	xor	a
+;;;	out	(flsel),a	;;alle LW selektieren
+;;;	out	(flmot),a	;;damit "motor on" fuer alle gebildet
+
+	ld	a,0ffh		;; alle LW ausschalten
+	out	(flsel),a
+
+	xor	a
+	ld	(alwnr),a	;; LW 0 ist das zuletzt benutzte, Motor ist aus
+	ld	(aspnr),a	;; steht auf Spur 0
+	ld	b,maxlw
+	ld	hl,spnrl
+fl.ka7::ld	(hl),a		;; alle alten Spurnr. sind 0
+	inc	hl
+	djnz	fl.ka7
+
+	endm
+  
+ endif
+
+
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+;	FLOPPY-Treiber
+;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+floppy::
+; CTC Kanal initialisieren
+;
+	di
+	ld	a,37h		; Zeitgeber 25 ms, gleichzeitig
+	out	(flctc),a	; Motorabschaltung stoppen
+	ld	a,240
+	out	(flctc),a
+	ei
+
+; Anfangswerte stellen
+	ld	a,(ft.len)	; fl.tsb := 2**ft.len (Anzahl 128er Bl.)
+	ld	(sidlen),a
+	inc	a
+	ld	b,a
+	ld	a,80h
+flp01::	rlca
+	djnz	flp01
+	ld	(fl.tsb),a
+
+	ld	a,16		; Fehlerzaehler fuer CRC-Fehlerwiederholungen
+	ld	(crerc),a
+	ld	a,5		; Fehlerzaehler fuer Spurfindewiederholungen
+	ld	(sperc),a
+
+
+; Laufwerksnummer pruefen
+	ld	a,(ft.lwn)	; LW
+	cp	maxlw		; LW < groesster LW-Nr.?
+	jr	nc,nolw		; -> nein, Fehler: LW nicht existent
+	ld	c,a		; merken LW fuer Motor-an-Test
+	ld	b,a
+	or	a		; LW=0?
+	ld	a,(lwexis)
+	jr	z,drv0		; ->ja
+sp13::	rrca
+	rrca
+	djnz	sp13
+drv0::	and	3
+	jr	nz,drv0a
+
+nolw::	ld	a,'D'		; LW nicht existent
+	jp	fehret		; -> Fehler
+
+drv0a::
+
+; LW selektieren und Motor einschalten
+	set	3,c		; Motor-an-Bit setzen
+	ld	hl,alwnr
+	ld	a,(hl)
+	bit	3,a		; ist Motor (noch) an?
+	jr	z,nfdein	; -> nein
+	cp	c		; ist es das richtige LW?
+	jr	nz,afdaus	; -> nein, also LW abschalten
+
+; LW ist noch selektiert und Motor laeuft
+	ld	a,(aspnr)	; stimmt Spur?
+	ld	hl,ft.trk
+	cp	(hl)
+	jr	nz,spe		; -> nein, Positionieren
+	jp	phrdwr		; -> Uebertragung beginnen
+  
+; Motor des falschen LW laeuft noch
+afdaus::call	flres		; alte Spurnr. merken
+
+; neues LW anwaehlen, Motor einschalten und alte Spurnr. holen
+nfdein::ld	(hl),c		; neues LW, Motor-an-Bit
+	res	3,c		; alte Spurnr. holen
+	ld	b,0
+	ld	hl,spnrl
+	add	hl,bc
+	ld	a,(hl)
+	ld	(aspnr),a
+	ld	b,c
+	inc	b
+	ld	a,077h		; LW-Anwahlbyte bilden
+nfdei2::rlca
+	djnz	nfdei2
+	and	0f0h		; alle LCK's aktiv
+	out	(flsel),a	; Laufwerk selektieren (und Motor ein)
+	ld	a,10111011b	; Kopf laden
+	out	(flcoad),a
+
+; falls die Spurnummer schon stimmt, Zugriff ohne Kopfstabilisation
+	ld	a,(ft.trk)
+	cp	(hl)
+	jr	z,phrdwr
+
+; bei Spurnr. 0 erst auf Spur 0 fahren
+	or	a
+	jr	nz,spe
+sper1::	call	trk0		; erst auf Spur 0 fahren
+
+; Positionierung auf ft.trk
+spe::	ld	a,(ft.trk)
+	ld	bc,8900h+flcoad	; stepout-Befehl
+	ld	hl,aspnr
+	cp	(hl)		; auf richtiger Spur angekommen?
+	jr	z,spio		; -> ja
+	jr	c,spre		; -> stepout
+xmaxtr::cp	83		; Spur zu gross?
+	jr	c,spve		; -> nein, stepin
+	ld	a,'T'		; Fehler: Spurnr. zu gross
+	jp	fehret
+
+; stepin
+spve::	inc	(hl)		; alte Spurnr. erhoehen
+	ld	b,0a9h
+	call	step
+	jr	spe
+
+; stepout  
+spre::	dec	(hl)		; alte Spurnr. verringern
+	call	step
+	jr	spe
+
+; steppen
+step::	ld	a,(ft.stp)	; Anzahl der Stepimpulse pro Step
+step0::	out	(c),b		; select direction
+step2::	push	bc
+	res	7,b
+	out	(c),b
+	set	7,b
+	out	(c),b		; step
+	push	af
+	ld	a,(ft.sti)	; 13,2 / 11,6 / 3,0 ms Schrittzeit
+stepw1::ld	b,19		;(19*13)/(256*9600)=0.0001
+stepw::	djnz	stepw		;0.1 ms warten
+	dec	a
+	jr	nz,stepw1
+	pop	af
+	pop	bc
+	dec	a
+	jr	nz,step2
+	ret
+
+; Spur 0 anfahren
+trk0::	in	a,(flcobd)
+	rlca			; Spur 0 erreicht?
+	jr	nc,trk01	; -> ja
+	ld	bc,9f00h+flcoad	; stepout-Befehl
+	ld	a,1
+	call	step0
+	jr	trk0
+trk01::	xor	a
+	ld	(aspnr),a
+	ret
+
+; auf richtiger Spur Kopf stabilisieren
+spio::
+;;;kann entfallen wegen Warten auf ready LW
+;;;Wenn trotzdem nicht stabil, so  zieht CRC und es erfolgt Wdhlg
+;;;beim Schreiben ist zuvor noch CRC-Berechnung und die dauert...!
+;	ld	a,40		; 40 ms
+;spiow1::ld	b,189		; (189*13)/(256*9600)=0.001
+;spiow::	djnz	spiow		; 1 ms warten
+;	dec	a
+;	jr	nz,spiow1
+
+phrdwr:
+rdwr::
+; Anfangswerte fuer Transfers der physischen Sektoren
+	ld	a,(ft.anz)	; Anzahl der zu uebertragenden phys. Sektoren
+	or	a		; nur positionieren?
+	jp	z,noerr		; -> ja, fertig
+	ld	(secan1),a
+	ld	(secanz),a
+
+	ld	a,(ft.trk)	; Spur
+	ld	(sidtr),a
+; evtl. Precompensation einschalten
+	ld	bc,1800h+flcobd
+	cp	25		; ab Spur 25 mit writeprecomp.
+	jr	nc,prec
+	res	3,b
+prec::	out	(c),b
+
+	ld	a,(ft.sec)	; erste zu uebertr. Sektornr.
+	ld	(sidsec),a
+
+; evtl. side 1 anwaehlen vorbereiten
+	ld	a,(ft.sid)
+	ld	(sidsid),a
+	or	a
+	ld	a,10000101b	; Lesen Marke ein
+	jr	z,pside		; -> side 0
+	res	2,a		;    side 1
+pside::	ld	(xsd01+1),a
+	ld	(xsd04+1),a
+	xor	00110001b	; Schreiben ein mit Mark reset
+	ld	(xsd02+1),a
+
+	ld	a,(ft.kom)
+	bit	1,a		; Lesen Sekt.Id?
+	ld	a,0c2h		; jp nz,sperr
+	ld	hl,sperr
+	jr	z,srdsid	; -> nein
+	ld	a,(ft.trk)
+	or	a		; von Spur 0?
+	ld	hl,0		; nop,nop
+	jr	nz,srdsdt	; -> nein
+	ld	hl,20h+((sperr-xrdsdt-2) shl 8); jr nz,sperr
+srdsdt::ld	(xrdsdt),hl	; nur Spur 0 kontrollieren
+	ld	a,0c3h		; jp rdsid
+	ld	hl,rdsid
+srdsid::ld	(xrdsid),a	; Sprungbefehl stellen
+	ld	(xrdsid+1),hl
+
+
+	ld	a,(ft.kom)	; Schreiben?
+	bit	2,a
+	jr	z,readyt	; -> nein
+
+; pruefen, ob Schreiben erlaubt ist
+	in	a,(flcobd)
+	bit	5,a		; WP
+	ld	a,'W'		; Fehler: write protected
+	jp	z,fehret
+
+; CRC-Zeichen der zu schreibenden Daten berechnen und in crcber ablegen
+	ld	hl,(ft.adr)
+	ld	ix,crcber	; Pointer auf 1. Daten-CRC stellen
+crcbes::call	crcbd		; CRC eines phys. Sektors berechnen
+	ld	(ix+0),d
+	ld	(ix+1),e	; ... und ablegen
+	call	crcnb		; weiterer phys. Sektor?
+	jr	nz,crcbes	; -> ja
+
+
+readyt::
+; auf LW-Bereitschaft warten; nach Ablauf der Readyzeit Fehler
+	ld	b,255		; ca. 1,3 sec
+sp39::	in	a,(flcobd)
+	rra
+	jr	nc,spist	; -> LW ist bereit
+	dec	c
+	jr	nz,sp39
+	djnz	sp39
+	ld	a,'R'		; Fehler: LW nicht bereit
+	jp	fehret
+
+spist::	ld	hl,(ft.adr)	; Zeiger auf Daten
+	ld	ix,crcber	; Pointer auf CRC-Zeichentabelle setzen
+  
+spi0c::				; naechsten Sektor lesen
+	ld	a,60		; Wartezaehler fuer sector-not-found-Meldung
+	ld	(seerc),a
+
+spsrty::			; Eingang wiederholen Sektorlesen
+
+	ld	a,20		; time out fuer undefinierte Spur
+	ld	(fltofl),a
+
+; Start des Transfers
+;--------------------
+
+spi0b::				; Rueckkehr hierher, wenn
+				; 25ms um oder nach A1 kein FE
+
+	ei			; Interruptfenster
+				; (mind. 1 Befehl zw. EI und DI!)
+	ld	a,0
+fltofl	equ	$-1
+	dec	a		; hat time out gezogen?
+	ld	(fltofl),a
+	jp	z,fl.to1	; ->, ja
+
+	di			; ab jetzt Echtzeitbetrieb
+
+	in	a,(flcoad)	; AMF scharf machen
+	and	4
+	or	10111011b	; mit Mark reset
+	out	(flcoad),a
+	xor	a
+	out	(fldaad),a
+	in	a,(fldabd)
+
+	ld	c,flcoad
+xsd01::	ld	e,085h		; side 0: 085h; side 1: 081h
+	out	(c),e		; Markenerkennen ein
+
+spi1::	in	a,(flcobd)	; warten bis Marke erkannt
+	and	2
+
+;;; fuer PC 1715
+;;;	jr	nz,spi2		; -> Marke gefunden
+
+;;; fuer K5120
+	jr	z,spi2		; -> Marke gefunden
+
+	in	a,(flctc)
+	cp	240		; CTC-Rest auf vollem Stand?
+	jr	nz,spi1		; -> nein, weiter warten
+	jr	spi0b		; -> 25ms um, Interrupt(s) abarbeiten
+	
+spi2::	in	a,(fldabd)	; Sync. A1 ueberlesen
+	cp	0a1h
+	jr	z,spi2
+	cp	0feh		; Sektor-AM?
+	in	a,(fldabd)	; trk
+	jr	nz,spi0b	; -> nein, weitersuchen
+	cp	0ffh		; stimmt die Spurnr.?
+sidtr	equ	$-1
+	ld	c,a		; merken trk, falls Lesen Sekt.Id.
+ 	in	a,(fldabd)	; side
+xrdsid::jp	nz,sperr	; -> nein, Positionierfehler
+;		 wird bei Sektor-Id lesen modif. mit 'jp rdsid'
+	cp	0ffh		; stimmt side?
+sidsid	equ	$-1
+	in	a,(fldabd)	; sec
+	jp	nz,serr		; -> nein, auf weiteren Versuch testen
+	cp	0ffh		; stimmt Sektornr.?
+sidsec	equ	$-1
+	in	a,(fldabd)	; len
+	jp	nz,serr		; -> nein, auf weiteren Versuch testen
+	cp	0ffh		; stimmt len?
+sidlen	equ	$-1
+	in	a,(fldabd)	; CRC
+	jp	nz,serr		; -> nein, auf weiteren Versuch testen
+
+; das gewuenschte Sektor-ID ist gefunden
+	ld	bc,18*256+flcoad
+spi3::	delay
+	in	a,(fldabd)	; CRC und Gap ueberlesen
+	ld	a,(ft.kom)	; !!! CRC wird nicht geprueft !!!
+	djnz	spi3
+	bit	2,a		; Schreiben?
+	in	a,(fldabd)
+	jp	nz,spo3		; -> ja, Schreiben
+
+; Sektorlesen
+	ld	b,e
+	set	5,b
+	delay
+	in	a,(fldabd)	; Gap ueberlesen
+	set	4,b
+	delay
+	in	a,(fldabd)
+	out	(c),b		; Mark reset
+	out	(c),e		; Markenerkennung ein
+
+	ld	b,0 ; maximal 256*43/(256*9600)=4.4ms= ca.170 Bytes warten
+spi4::	in	a,(flcobd)	; auf Marke warten
+	and	2
+
+;;; fuer PC 1715 und K5122
+;;;	jr	nz,spi5
+
+;;; fuer K5120
+	jr	z,spi5
+
+	djnz	spi4
+	jp	fl.to2		; Datenmarke nicht gefunden
+
+spi5::	in	a,(fldabd)	; Sync. A1 ueberlesen
+	cp	0a1h
+	jr	z,spi5		; !!! auf Daten-AM wird nicht geprueft !!!
+	ld	a,(fl.tsb)	; Anzahl 128er Bytes im Sektor
+spi6::	ld	bc,128*256+fldabd
+	ini
+spi7::	push	ix
+	pop	de		; stellen Zeiger auf CRC
+	nop
+	nop
+	nop
+	ini			; Daten lesen
+	jr	nz,spi7
+	dec	a
+	jr	nz,spi6
+	ex	de,hl		; CRC-Adresse holen
+	ini			; CRC lesen
+	delay
+	ini
+	ex	de,hl		; neue CRC-Adresse zurueck
+	push	de
+	pop	ix
+
+	in	a,(fldabd)
+	ld	a,0bbh
+	out	(flcoad),a	; AMF inaktiv, Kopf geladen
+
+	ei			; Ende des Echtzeitbetriebs
+
+	call	nxtsec		; weiterer Sektor zu lesen?
+	jp	nz,spi0c	; -> ja, weiteren phys. Sektor lesen
+
+; Pruefen der CRC-Zeichen der gelesenen phys. Sektoren
+	ld	hl,(ft.adr)
+	ld	ix,crcber
+crcbel::call	crcbd		; CRC bilden
+	call	crcvgl		; ... und vergleichen
+	jp	nz,crcer	; -> CRC-Fehler, alles neu lesen
+	call	crcnb		; von weiterem phys. Sektor CRC pruefen?
+	jr	nz,crcbel	; -> ja
+	jp	noerr		; -> fertig
+
+; physischen Sektor schreiben
+spo3::	in	a,(fldabd)	; Gap ueberlesen
+xsd02::	ld	e,0b4h		; side 0: 0b4h; side 1: 0b0h
+	ld	b,10
+	in	a,(fldabd)
+	out	(c),e		; write enable
+	xor	a		; Nullenvorspann schreiben
+	out	(fldaad),a
+	delay
+	out	(fldaad),a
+spo4::	delay
+	nop
+	nop
+	nop
+	out	(fldaad),a
+	djnz	spo4
+	ld	a,0a1h		; 3 x Sync. A1 schreiben
+	set	1,e		; side 0: 0b6h; side 1: 0b2h
+	out	(fldaad),a
+	out	(c),e		; Markenschreiben ein
+	res	1,e
+	delay
+	out	(fldaad),a
+	delay
+	out	(fldaad),a
+	delay
+	ld	a,0fbh		; Daten-AM schreiben
+	out	(fldaad),a
+	out	(c),e		; Markenschreiben aus
+	ld	a,(fl.tsb)	; phys. Sektorlaenge bestimmen
+spo5::	ld	bc,128*256+fldaad
+	outi
+spo6::	push	ix
+	pop	de		; vorbereiten CRC Schreiben
+	nop
+	nop
+	nop
+	outi			; Daten schreiben
+	jr	nz,spo6
+	dec	a
+	jr	nz,spo5
+	ex	de,hl
+	outi			; CRC schreiben
+	delay
+	outi
+	ex	de,hl
+	push	de
+	pop	ix		;CRC-Zeiger weiterstellen
+
+	ld	a,4eh
+	out	(fldaad),a	; 24x Nachsatz-4E schreiben
+	ld	e,24
+spo7::	delay
+	out	(fldaad),a
+	dec	e
+	jr	nz,spo7
+	out	(fldaad),a
+
+xsd04::	ld	e,085h		; side 0: 085h; side 1: 081h
+	out	(c),e		; schreiben aus, Markenerkennen ein
+
+	ei			; Ende des Echtzeitbetriebs
+
+	call	nxtsec		;weiterer Sektor?
+	jp	nz,spi0c	; -> ja, naechsten phys. Sektor suchen
+
+	ld	hl,ft.kom
+	bit	0,(hl)		; Verify?
+	jr	z,noerr		; -> nein, Fertigmelden
+	res	2,(hl)		; sonst schreiben aus
+	jp	rdwr		; und auf gleichen Puffer zuruecklesen
+
+; Fehlerbehandlung
+;=================
+; blieb weiterer Versuch, den richtigen Sektor zu finden?
+serr::	ei			; Echtzeitbetrieb beenden
+	ex	de,hl		; retten Transferadr.
+	ld	hl,seerc
+	dec	(hl)
+	ex	de,hl
+	jp	nz,spsrty	; -> ja
+	ld	a,'S'		; Fehler: Sektoradresse nicht gefunden
+	jr	fehret
+
+; blieb weiterer Versuch, die richtige Spur zu finden?
+sperr::	ei			;Echtzeitbetrieb beenden
+	ld	hl,sperc
+	dec	(hl)
+	ld	a,'T'		; Fehler: Spur ist nicht zu finden
+	jr	z,fehret
+	ld	b,3
+sperr1::push	bc
+	ld	bc,0a900h+flcoad ; stepin
+	call	step
+	pop	bc
+	djnz	sperr1
+	jp	sper1		; -> ja, also recalibrate und neu anfahren
+
+; blieb weiterer Versuch, Sektor CRC-richtig reinzubekommen?
+crcer::	ld	hl,crerc
+	dec	(hl)
+	jp	nz,rdwr		; -> ja
+	ld	a,'C'		; Fehler: CRC-Zeichen falsch
+	jr	fehret
+
+fl.to2::
+fl.to1::ld	a,'U'		; time-out
+	jr	fehret
+
+; Lesen Sektor-Id
+rdsid::
+xrdsdt::jr	nz,sperr	; Spur stimmt nicht
+				; bei Spur >0 auf nop,nop
+	ld	b,a		; merken side
+	ld	(ft.trk),bc	; trk, sid hinterlegen
+	in	a,(fldabd)	; sec
+	ld	e,a
+	delay
+	in	a,(fldabd)	; len
+	ld	d,a
+	ld	(ft.sec),de	; sec,len hinterlegen
+	ld	a,(ft.trk)
+	or	a		; war trk 0 verlangt?
+	jr	nz,noerr	; -> nein, keine Spurkontrolle
+	cp	c		; auf trk 0 angekommen?
+	jr	nz,sperr	; -> nein, Positionierfehler
+
+
+; kein Fehler ist aufgetreten
+noerr::	xor	a
+
+; Fertigmelden, Ergebnis steht in A
+fehret::
+	push	af		; Resultat merken
+	ld	a,0bbh
+	out	(flcoad),a	; AMF inaktiv, Kopf geladen
+
+; Fertigmelden, Kopfabheben nach 6s initialisieren
+	ei			; Echtzeitbetrieb beenden
+	ld	a,255		; 255*25ms = 6s Zeitverzoegerung
+	ld	(fl.zto),a
+	ld	hl,itimeo
+	ld	(ioctc+2*(flctc-(flctc and 0fch))),hl
+	ld	a,low ioctc
+	out	(flctc and 0fch),a
+	ld	a,0b7h
+	out	(flctc),a
+	ld	a,240
+	out	(flctc),a
+	pop	af		; Resultat von Floppy
+	or	a		; stellen Z-Flag
+	ret
+
+; Motor aus und alte Spurnummer merken
+flres::	push	hl
+	push	bc
+	ld	hl,alwnr
+	res	3,(hl)		; Motor aus vermerken
+	ld	c,(hl)
+	ld	b,0
+	ld	hl,spnrl	; alte Spurnr. in Tabelle merken
+	add	hl,bc
+ 	ld	a,(aspnr)
+	ld	(hl),a
+	pop	bc
+	pop	hl
+	ret
+
+; Lesen/Schreiben naechsten Sektor vorbereiten
+nxtsec::ex	de,hl
+	ld	hl,sidsec
+	inc	(hl)
+	ld	hl,secan1
+	dec	(hl)		;weiterer Sektor?
+	ex	de,hl
+	ret			;ret z bei nein
+
+; CRC-Berechnung
+;===============
+
+; von weiterem Sektor CRC-Zeichen berechnen?
+; IX wird weitergestellt
+crcnb::	inc	ix		; CRC-Pointer erhoehen
+	inc	ix
+	ld	a,0ffh
+secanz	equ	$-1
+	dec	a
+	ld	(secanz),a
+	ret
+
+; CRC-Vergleich DE mit (IX)
+crcvgl::ld	a,(ix+0)
+	cp	d
+	ret	nz
+	ld	a,(ix+1)
+	cp	e
+	ret
+
+; von einem phys. Sektor ab HL die CRC-Zeichen berechnen  
+; HL wird weitergestellt
+crcbd::	ld	de,0e295h
+	ld	a,1
+fl.tsb	equ	$-1		; Zahl der 128er Bloecke
+sp74::	push	af
+	ld	b,128
+	call	bercrc
+	pop	af
+	dec	a
+	jr	nz,sp74
+	ret
+
+; von HL an B Zeichen auf DE als CRC-Polynom draufrechnen
+bercrc::ld	a,(hl)
+	xor	d
+	ld	d,a
+	rrca
+	rrca
+	rrca
+	rrca
+	and	0fh
+	xor	d
+	ld	d,a
+	rrca
+	rrca
+	rrca
+	ld	c,a
+	and	1fh
+	xor	e
+	ld	e,a
+	ld	a,c
+	rrca
+	and	0f0h
+	xor	e
+	ld	e,a
+	ld	a,c
+	and	0e0h
+	xor	d
+	ld	d,e
+	ld	e,a
+	inc	hl
+	djnz	bercrc
+	ret
+
+; Interruptbehandlungsroutine: time-out-Zeit abgelaufen
+; ausgeloest durch Index-Interrupt (alle 200ms)
+itimeo::ld	(prsprt),sp
+	ld	sp,prsprt
+	push	af
+	ld	a,0		; Zaehler fuer time-out Takte
+fl.zto	equ	$-1
+	dec	a		; time-out -1
+	ld	(fl.zto),a
+	jr	nz,pret1	;-> nicht abgelaufen
+	ld	a,3		; Interrupt sperren
+	out	(flctc),a
+	ld	a,0ffh		; Motor aus
+	out	(flsel),a
+	call	flres		; Flags verwalten und Spur merken
+
+pret1::	pop	af		; allg. Ausgang Interruptroutinen
+	ld	sp,(prsprt)
+	ei
+	reti
+
+; Motor-Abschaltung von aussen her
+headup::ld	a,1		; bei naechstem Interrupt
+	ld	(fl.zto),a
+	ret
+
+;*****************************************************
+;	Arbeitsbereiche phys. Floppy-Treiber
+;*****************************************************
+
+; Parameterfeld
+;==============
+ft.kom::defb	0	; Kommando 1 lesen / 4 schreiben
+ft.adr::defw	0	; Transferadresse
+ft.lwn::defb	0	; Laufwerksnummer 0..3
+ft.trk::defb	0	; Spurnummer   0..
+ft.sid::defb	0	; side-Nr.     0..1
+ft.sec::defb	0	; Sektornummer 1..
+ft.len::defb	0	; Sektorlaenge 0..3
+ft.anz::defb	0	; Anz. phys. Sektoren zur CRC-Berechnung beim Lesen
+ft.stp::defb	0	; Anzahl der Stepimpulse pro Spur
+ft.sti::defb	0	; Schrittzeit von Spur zu Spur
+ft.mtr::defb	0	; Anzahl der Spuren pro Seite
+ft.end::
+
+fl.res::defb	0	; Ergebniskode
+
+secan1::defb	0	; Restzahl Sektoren fuer read/write
+crcber::defs	2*18,255; Ber. zum Ablegen der gelesenen/zu schreibenden CRC-Z.
+			; reicht fuer 18 physische Sektoren pro Transfer
+
+; Fehler-Wiederholungszaehler
+crerc::	defb	0	; CRC-Fehler
+sperc::	defb	0	; Spur nicht gefunden
+seerc::	defb	0	; Sektor nicht gefunden
+
+lwexis::defb	0	; Anzeigebyte fuer vorhandene Laufwerke
+			; bit 0 = 1 LW 0 vorhanden
+			; bit 2 = 1 LW 1 vorhanden
+			; bit 4 = 1 LW 2 vorhanden
+			; bit 6 = 1 LW 3 vorhanden
+
+alwnr::	defb	0	; alte Laufwerksnummer vom vergangenen Zugriff
+			; bit 0-2 LW-Nr., bit 3 = 1 Motor laeuft noch
+
+aspnr::	defb	0	; aktuelle Spur des durch alwnr bezeichneten LW
+spnrl::	defb	0,0,0,0	; Tabelle der alten Spurnummern
+
+	defs	24,0ffh	; Hilfsstack fuer Interruptroutinen
+prsprt::defw	0	; in Interruptroutinen geretteter SP
+

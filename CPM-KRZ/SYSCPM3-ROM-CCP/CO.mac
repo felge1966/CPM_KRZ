@@ -1,0 +1,345 @@
+; Bildschirmbedienung SCP-kompatibel und ADM31/ADM3a
+; --------------------------------------------------
+;
+; einige ADM31-Steuerfolgen fehlen noch
+;
+; 10.09.85 (M. Krzikalla)
+
+ if1
+ .printx * Bildschirm
+ .printx *     10.09.85 - 16x64 und 24x80 SCP- und ADM31/ADM3a-kompatibel
+ endif
+
+; Tabelle der Bildschirmsteuerzeichen
+;
+bstab::	defb	0dh,0ah,8	; CR, LF, BS
+	defb	0ch		; HOME and CLEAR for SCP-like terminal
+	defb	1ah		; HOME and CLEAR for ADM31/ADM3a terminal
+	defb	1		; HOME
+	defb	1ch		; UP (org. for SCP was 1ah)
+	defb	7fh		; DEL = BS space BS
+	defb	13h		; ^S  = <- und CNCL aendern
+	defb	14h		; EOS
+	defb	15h		; RIGHT
+	defb	16h		; EOL
+	defb	18h		; DELL ?????
+	defb	1bh		; CPOS r c
+	defb	7		; BELL
+	defb	82h		; cursor on
+	defb	83h		; cursor off
+bstabe::
+
+bsbeg::	defw	bsanf		; Konstante : Bildschirmanfang
+bszei::	defw	maxz		; Konstante : Zeilenanzahl
+bsspa::	defw	maxs		; Konstante : Spaltenanzahl
+
+qesc::	defb	0		; Merkzelle f. laufende Positionierung
+qcurs::	defb	80h		; Merkzelle fuer Kursoranzeige
+bsaddr::defw	bsanf		; aktuelle Bildschirmposition
+umsch::	defb	20h		; aktuelle shift-Maske
+bsoffs::defb	0		; Offset zur Cursorpositionierung
+
+	defw	bscr,bslf,bsbs,bscls
+	defw	bscls,bshome,bsup,bsdel
+	defw	bstbs,bseos,bsrigh,bseol
+	defw	bsdell,bspos,ci.bell
+	defw	bscon,bscoff
+crtabe::
+
+co.ch::	LD	HL,bsretu
+	PUSH	HL
+	LD	HL,(bsaddr)
+	setbs
+	RES	7,(HL)
+	setram
+	LD	A,(qesc)
+	OR	A
+	JR	NZ,bspos0
+	LD	A,C
+	CP	20H
+	jp	c,bs.06
+	CP	7FH
+	jp	nc,bs.06
+bsout::	setbs
+	LD	(HL),A
+	setram
+	EX	DE,HL
+bsrigh::INC	DE
+bsv11::	ld	hl,bsanf+maxs*maxz-1
+	or	a
+	sbc	hl,de
+	bit	7,h
+	ex	de,hl
+	ret	z
+bsv31::	LD	DE,bsanf+maxs*(maxz-1)
+bs.01::	PUSH	DE
+bsv61::	LD	HL,bsanf+maxs
+	LD	DE,(bsbeg)
+bsv51::	LD	BC,maxs*(maxz-1)
+	setbs
+	LDIR
+	DEC	HL
+	LD	(HL),20h
+bsv21::	LD	DE,bsanf+maxs*maxz-2
+bsvc1::	LD	BC,maxs-1
+	LDDR
+	setram
+	POP	HL
+	RET
+;-----------------------
+bstbs::	ld	a,13h		; <- auf backspace setzen
+	ld	(ci.tbs+1),a
+	ld	a,7fh
+	ld	(ci.tb2+1),a
+	ret
+;-----------------------
+bsretu::LD	(bsaddr),HL
+	LD	A,(qcurs)
+	setbs
+	OR	(HL)
+	LD	(HL),A
+	setram
+	RET
+;-----------------------
+bspos0::cp	2		; ist Spalte oder '='/'Y' gekommen?
+	jr	nz,bspos3	; -> nein
+	ld	a,(bsoffs)	; laeuft schon ADM31/ADM3a-Positionierung?
+	or	a
+	jr	nz,bspos2	; -> ja
+	ld	a,c		; ist '='/'Y' gekommen?
+	cp	'='
+	jr	z,bspos1
+	cp	'Y'
+	jr	nz,bspos2	; -> nein, also SCP-Positionierung
+bspos1::ld	a,20h		; ja, also ADM31/ADM3a-Positionierung
+	ld	(bsoffs),a
+	ret
+bspos2::ld	a,2
+bspos3::RES	7,C
+	DEC	A
+	LD	(qesc),A
+	JR	Z,bs.04		; -> Spalte ist gekommen
+	ld	hl,bsoffs
+	ld	a,c
+	sub	(hl)
+	ld	c,a
+bsvb1::	LD	A,maxz-1
+	CP	C
+	JR	C,bs.02		; -> Zeilennummer zu gross
+	LD	A,C
+bs.02::	LD	HL,(bsbeg)
+	OR	A
+	RET	Z
+	LD	DE,(bsspa)
+	LD	B,A
+bs.03::	ADD	HL,DE
+	DJNZ	bs.03
+	RET
+;-----------------------
+bs.04::	push	hl
+	ld	hl,bsoffs
+	ld	a,c
+	sub	(hl)
+	ld	c,a
+	pop	hl
+bsvc2::	LD	A,maxs-1
+	CP	C
+	JR	NC,bs.05	; -> Spaltennr. in Ordnung
+	LD	C,A
+bs.05::	LD	B,0
+	ADD	HL,BC
+	RET
+;-----------------------
+bs.06::	EX	DE,HL		; Steuerzeichen suchen
+	LD	HL,bstab
+	LD	BC,bstabe-bstab
+	CPIR
+	JR	Z,bs.08		; -> gefunden
+	EX	DE,HL
+	CP	84H
+	RET	C
+	CP	88H
+	JR	C,bs.07
+	CP	0B0H
+	RET	C
+bs.07::	RES	7,A
+	jp	bsout
+;-----------------------
+bs.08::	LD	HL,crtabe-1
+	XOR	A
+	SBC	HL,BC
+	SBC	HL,BC
+	LD	B,(HL)
+	DEC	HL
+	LD	C,(HL)
+	PUSH	BC
+	LD	L,E
+	LD	H,D
+	RET			; -> zur Behandlung des Steuerzeichens
+;-----------------------
+bscr::	LD	BC,(bsspa)
+bsv12::	LD	HL,bsanf+maxz*maxs-1
+bs.09::	SBC	HL,BC
+	PUSH	HL
+	SBC	HL,DE
+	POP	HL
+	JR	NC,bs.09
+	INC	HL
+	RET
+;-----------------------
+bsv41::
+bslf::	LD	HL,bsanf+(maxz-1)*maxs-1
+	SBC	HL,DE
+	JP	C,bs.01
+	LD	HL,(bsspa)
+	ADD	HL,DE
+	RET
+;-----------------------
+bsdel::	setbs
+	ex	de,hl
+	LD	(hl),20h
+	ex	de,hl
+	setram
+bsbs::	LD	HL,(bsbeg)
+	SBC	HL,DE
+	EX	DE,HL
+	RET	Z
+	DEC	HL
+	RET
+;-----------------------
+bscls::	LD	DE,(bsbeg)
+bsv13::
+bseos::	LD	HL,bsanf+maxz*maxs-1
+	SBC	HL,DE
+	EX	DE,HL
+	setbs
+	LD	(HL),20h
+	setram
+	RET	Z
+	PUSH	HL
+	LD	B,D
+	LD	C,E
+	LD	D,H
+	LD	E,L
+	INC	DE
+	setbs
+	LDIR
+	setram
+	POP	HL
+	RET
+;-----------------------
+bshome::LD	HL,(bsbeg)
+	RET
+;-----------------------
+bsv71::
+bsup::	LD	HL,bsanf+maxs-1
+	SBC	HL,DE
+	EX	DE,HL
+	RET	NC
+bsva1::	LD	DE,-maxs
+	ADD	HL,DE
+	RET
+;-----------------------
+bsdell::CALL	bscr
+	EX	DE,HL
+bseol::	PUSH	DE
+	CALL	bscr
+	ADD	HL,BC
+	XOR	A
+	SBC	HL,DE
+	setbs
+bs.10::	ex	de,hl
+	LD	(hl),20h
+	ex	de,hl
+	INC	DE
+	DEC	L
+	JR	NZ,bs.10
+	setram
+	POP	HL
+	RET
+;-----------------------
+bspos::	LD	A,2
+	LD	(qesc),A
+	xor	a		; fuer SCP ist offset = 0
+	ld	(bsoffs),a
+	RET
+;-----------------------
+bscon::	ld	a,80h		; cursor on
+	jr	bs.11
+bscoff::XOR	A		; cursor off
+bs.11::	LD	(qcurs),A
+	RET
+
+
+co.kalt	macro
+co.kal::setbs
+	xor	a
+	ld	hl,bsanf+24*80
+	ld	(hl),a
+	cp	(hl)
+	jr	z,co.ka1	; -> 80x24
+	ld	hl,16		; Umstellen auf 16x64
+	ld	(bszei),hl
+	ld	hl,64
+	ld	(bsspa),hl
+	call	bs.ini
+	setram
+	jp	co.ka1
+
+bs.ini::ld	a,(bszei)	; maxz-1
+	dec	a
+	ld	(bsvb1+1),a
+
+	ld	a,(bsspa)	; maxs-1
+	dec	a
+	ld	(bsvc1+1),a
+	ld	(bsvc2+1),a
+
+	xor	a		; -maxs
+	ld	de,(bsspa)
+	ld	hl,0
+	sbc	hl,de
+	ld	(bsva1+1),hl
+
+	ld	hl,(bsbeg)	; bsanf+maxs
+	add	hl,de
+	ld	(bsv61+1),hl
+
+	dec	hl		; bsanf+maxs-1
+	ld	(bsv71+1),hl
+
+	ld	a,(bszei)	; maxs*(maxz-1)
+	ld	b,a
+	ld	hl,0
+bs.in1::dec	b
+	jr	z,bs.in2
+	add	hl,de
+	jr	bs.in1
+bs.in2::ld	(bsv51+1),hl
+
+	ex	de,hl		; bsanf+maxs*(maxz-1)
+	ld	hl,(bsbeg)
+	add	hl,de
+	ld	(bsv31+1),hl
+
+	dec	hl		; bsanf+maxs*(maxz-1)-1
+	ld	(bsv41+1),hl
+
+	ld	de,(bsspa)	; bsanf+maxs*maxz-1
+	add	hl,de
+	ld	(bsv11+1),hl
+	ld	(bsv12+1),hl
+	ld	(bsv13+1),hl
+
+	dec	hl		; bsanf+maxs*maxz-2
+	ld	(bsv21+1),hl
+	ret
+
+co.ka1::
+	endm
+
+co.warm	macro
+	call	bscon
+	endm
+
+

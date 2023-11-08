@@ -1,0 +1,1297 @@
+ if1
+ .printx *
+ .printx * CP/M-Generierung Manfred Krzikalla
+ .printx * ==================================
+ .printx *            (27.10.1985)
+ .printx *
+ endif
+
+;**********************************************************************
+;**********************************************************************
+;**                                                                  **
+;**                                                                  **
+;**          M i k r o r e c h n e r s y s t e m  m i t              **
+;**                                                                  **
+;**                           CP/M-V2.2                              **
+;**                                                                  **
+;**                                                                  **
+;**********************************************************************
+;**********************************************************************
+;
+;
+;
+;  Bearbeiter       / Stand     / Bemerkung
+;-------------------/-----------/--------------------------------------
+;                   /           /
+;   Krzikalla, M.   /27.10.1985 / folgendes wurde bearbeitet
+;    HUB Berlin	    /		/
+; Sektion Mathematik/           /  Tastatur K7632/02, K7634/04 und K7636/06
+;    Bereich IV	    /		/    an ATS, ATD oder PIO;
+;		    /		/    im Interruptbetrieb oder im Polling
+;		    /		/  Tastatur K7637
+;		    /		/
+;                   /           /  Bildschirm 24*80 / 16*64 / 12*40 Zeichen
+;		    /		/  (zur Laufzeit umschaltbar)
+;		    /		/    - ADM31/ADM3A-kompatibel
+;		    /		/    - SCP-kompatibel
+;		    /		/    - SCP- und ADM31-kompatibel
+;		    /		/
+;                   /           /  Locher-Leser ueber ADA K6022
+;		    /		/  Locher-Leser ueber ALB
+;		    /		/
+;                   /           /  Drucker SD1156/ASCII ueber ADA K6022
+;                   /           /  Drucker SD1152/1157  ueber ATS K7028.10
+;		    /		/  Drucker SD1152/1157-SIO zweibahnig
+;		    /		/  Drucker SD1152/CENTRONICS ueber ATD
+;		    /		/  Drucker SD1152/PIO        ueber ATD
+;		    /		/  Drucker EPSON FX-80/RX-80 ueber ATD
+;		    /		/
+;                   /           /  KMB K5221 ueber AKB 5022
+;		    /           /   geblockte Bedienung unter Verwendung
+;		    /		/   der ROBOTRON-Routine vom 1.1.1981
+;		    /		/
+;		    /		/  8"-Floppy ueber AFS K5121
+;		    /		/  5"-Floppy ueber AMF K5120/K5122 mit K2521
+;		    /		/  5"-Floppy ueber AMF K5120/K5122 mit K2526
+;		    /		/  5"-Floppy ueber AMF K5126
+;		    /		/
+;		    /		/  CP/M-RAM mit 4x16k RAM
+;		    /		/  CP/M-RAM mit 1x64k OPS 3526.10
+;		    /		/  CP/M-RAM mit 1x64k OPS 3527
+;		    /		/  CP/M-RAM mit 1x64k OPS des ZWG
+;		    /		/  CP/M-RAM mit 1x64k Test-RAM des IfR
+;		    /		/
+;		    /		/  sim. Disk im Hauptspeicher
+;		    /		/  sim. Disk im Hintergr. mit K3526.10
+;		    /		/  sim. Disk im Hintergr. mit K3527
+;		    /		/  sim. Disk im Hintergr. mit OPS64/ZWG
+;                   /           /  sim. Disk im Hintergr. mit Test-RAM des KEAW
+;		    /		/  sim. Disk im Hintergr. mit OSS  des A5120/30
+;		    /		/  sim. Disk im Hintergr. mit 256k des A5120.16
+
+
+;   Inhalt
+;
+;  ..  - Generierungsangaben
+;  ..  - Sprungtabelle
+;  ..  - Interruptadressen
+;  ..  - Speicherumschaltungen
+;  ..  - Konsoleingabe
+;  ..  - Konsolausgabe
+;  ..  - Lesereingabe
+;  ..  - Druckerausgabe
+;  ..  - Stanzerausgabe
+;  ..  - IOBYTE-Auswertung
+;  ..  - read / write  Hilfsroutinen
+;      ..  - read / write  TPA-disk
+;      ..  - read / write  Kassetten geblockt
+;      ..  - read / write  Floppy
+;      ..  - read / write  RAM-Floppy
+;  ..  - boot / wboot
+;  ..  - e/a-Tabellenaufbau
+;  ..  - Arbeitszellen
+
+cr	equ	0dh
+lf	equ	0ah
+ff	equ	0ch
+tab	equ	09h
+esc	equ	1bh
+
+	page	66
+	include	EQ.MAC
+	page	66
+ if1
+ixa	defl	0
+ixb	defl	0
+ixc	defl	0
+ixd	defl	0
+ixe	defl	0
+ixf	defl	0
+ixg	defl	0
+ixh	defl	0
+ixi	defl	0
+ixj	defl	0
+ixk	defl	0
+ixl	defl	0
+ixm	defl	0
+ixn	defl	0
+ixo	defl	0
+ixp	defl	0
+
+dphga	defl	0
+dphgb	defl	0
+dphgc	defl	0
+dphgd	defl	0
+dphge	defl	0
+dphgf	defl	0
+dphgg	defl	0
+dphgh	defl	0
+dphgi	defl	0
+dphgj	defl	0
+dphgk	defl	0
+dphgl	defl	0
+dphgm	defl	0
+dphgn	defl	0
+dphgo	defl	0
+dphgp	defl	0
+ endif
+	.z80
+
+; Bootstrap des neu generierten BIOS
+	bstrap
+
+; BIOS-Sprungverteiler
+	.phase	biosan
+	jp	boot
+	jp	wboot
+	jp	const
+	jp	conin
+	jp	conou
+	jp	list
+	jp	punch
+	jp	reade
+	jp	home
+	jp	selds
+	jp	settr
+	jp	setse
+	jp	setdm
+	jp	read
+	jp	write
+	jp	lists
+	jp	sectr
+;
+	jp	return
+	jp	return
+	jp	return
+	jp	return
+	jp	return
+	jp	return
+	jp	return
+;
+	page	66
+; Interrupt Sprungtabelle (beginnt auf xx48h)
+; -------------------------------------------
+;
+	include	IT.MAC
+
+;----------------------------------------------------------------------
+
+ if1
+spber	equ	ramend
+ramend	defl	ramend-60h
+spber1	equ	ramend
+ramend	defl	ramend-20h
+ endif
+
+spret::	defs	2,0ffh
+
+
+; Stackrettung
+; ------------
+;
+reta::	ex	(sp),hl
+	ld	(spret),sp
+	ld	sp,spber
+	push	de
+	push	bc
+	push	ix
+	push	iy
+	jp	(hl)
+;
+retu::	pop	iy
+	pop	ix
+	pop	bc
+	pop	de
+	ld	sp,(spret)
+	pop	hl
+return::ret
+;
+	page	66
+	include	UM.MAC
+	page	66
+	include	CI.MAC
+	page	66
+; consol-status
+; -------------
+;
+const::	call	reta		; iobyte  00 00 00 xx
+	call	iodisp		;    0, 1, 3  crt:
+	defb	0		;    2        bat:
+	defw	const0
+	defw	const1
+	defw	reads1
+	defw	const3
+const0::
+const1::
+const3::
+	call	ci.sta
+	jp	retu
+
+; consol-Eingabe
+; --------------
+;
+conin::				; iobyte:  00 00 00 xx
+	call	reta		;   0, 1, 3  crt:
+	call	iodisp		;   2        bat:
+	defb	0
+	defw	conin0
+	defw	conin1
+	defw	reade1
+	defw	conin3
+conin0::
+conin1::
+conin3::
+	call	ci
+	jp	retu
+
+ci::
+	call	ci.sta		; warten bis Taste gedrueckt ist
+	jr	z,ci
+	call	ci.ch		; Zeichen uebernehmen
+
+; Bearbeitung der Sondertasten
+;
+;   1. ci.sys   zurueck ins Urbetriebssystem (falls vorhanden)
+;   2. ci.hex   hexadezimale Eingabe eines Zeichens
+;   3. ci.lr0   Druckerreset 0
+;   4. ci.lr1   Druckerreset 1
+;   5. ci.cap   Buchstaben Gross/Kleinschaltung aendern
+;   6. ci.gra   Groesse des Geraetes a festlegen
+;   7. ci.le1   laden/entladen Geraet 1
+;   8. ci.le2           "             2
+;   9. ci.le3           "             3
+;      ...
+;  13. ci.bsd   Bildschirm drucken
+;  14. ci.cmd   loeschen des MD-Verzeichnisses
+;  15. ci.ff    form feed auf LST:-Kanal ausgeben
+;  16. ci.lf	line feed auf LST:-Kanla ausgeben
+
+if ci.sys ne 0
+	cp	ci.sys		; System?
+	jr	nz,c02		; -------
+	ld	a,(pf10er)	; zurueck ins Urbetriebssystem
+	dec	a
+	ld	a,20h
+	jr	nz,c02
+	gosys
+ endif
+;
+c02::
+ if ci.hex ne 0
+	cp	ci.hex		; hex mode?
+	jr	nz,c03		; ---------
+	call	cbit4		; Hexaeingabe eines Zeichens
+	or	a
+	rla
+	rla
+	rla
+	rla
+	ld	c,a
+	call	cbit4
+	add	a,c
+	jp	c18
+
+cbit4::	call	ci.sta		; warten bis Taste gedrueckt
+	or	a
+	jr	z,cbit4
+
+	call	ci.ch		; Zeichen uebernehmen
+	and	7fh
+	cp	"A"
+	jr	c,cbit41
+	sub	7
+cbit41::sub	30h
+	and	0fh
+	ret
+ endif
+;
+c03::
+ if ci.ff ne 0
+	cp	ci.ff		; form feed?
+	jr	nz,c04		; ----------
+	ld	c,ff
+	call	listy
+	jp	ci
+ endif
+;
+c04::
+ if ci.lf ne 0
+	cp	ci.lf		; line feed?
+	jr	nz,c05		; ----------
+	ld	c,lf
+	call	listy
+	jp	ci
+ endif
+;
+c05::
+ if ci.lr0 ne 0
+	cp	ci.lr0		; Druckerreset 0?
+	jr	nz,c06		; ---------------
+	call	lo.reset	; evtl. 72 Zeilen
+	jp	ci
+ endif
+;
+c06::
+ if ci.lr1 ne 0
+	cp	ci.lr1		; Druckerreset 1?
+	jr	nz,c07		; ---------------
+	call	lo1.reset	; evtl. 66 Zeilen
+	jp	ci
+ endif
+;
+c07::
+ if ci.cap ne 0
+	cp	ci.cap		; CAPS?
+	jr	nz,c08		; -----
+	ld	a,(umsch)	; standard Shiftposition aendern
+	xor	20h
+	ld	(umsch),a
+	jp	ci		; -> neues Zeichen einlesen
+ endif
+;
+c08::
+if ci.gra ne 0
+	cp	ci.gra		; TD-Groesse?
+	jp	nz,c09		; -----------
+	ld	a,(pf10er)	; TPA-Diskgroesse setzen
+	dec	a
+	call	z,td.set	; setzen ist erlaubt
+	ld	a,20h
+	jp	c18
+ endif
+;
+c09::
+ if anzakb gt 0
+	cp	ci.le1		; L/E 1?
+	jr	nz,c10		; ------
+	call	km.ka1
+	jp	ci
+;
+c10::
+	cp	ci.le2		; L/E 2?
+	jr	nz,c11		; ------
+	call	km.ka2
+	jp	ci
+ endif
+;
+c11::
+ if anzakb gt 1
+	cp	ci.le3		; L/E 3?
+	jr	nz,c12		; ------
+	call	km.ka3
+	jp	ci
+;
+c12::	cp	ci.le4		; L/E 4?
+	jr	nz,c13		; ------
+	call	km.ka4
+	jp	ci
+ endif
+;
+c13::
+ if anzakb gt 2
+	cp	ci.le5		; L/E 5?
+	jr	nz,c14		; ------
+	call	km.ka5
+	jp	ci
+;
+c14::	cp	ci.le6		; L/E 6?
+	jr	nz,c15		; ------
+	call	km.ka6
+	jp	ci
+ endif
+;
+c15::
+ if ci.bsd ne 0
+	cp	ci.bsd		; BSD?
+	jr	nz,c16		; ----
+	ld	a,(bszei)
+	ld	b,a		; Bildschirminhalt auf LST:-Kanal ausgeben
+	ld	hl,(bsbeg)
+c151::	push	bc
+	push	hl
+	ld	c,lf
+	call	listy
+	ld	c,cr
+	call	listy
+	pop	hl
+	ld	a,(bsspa)
+	ld	b,a
+c152::	push	bc
+	setbs
+	ld	a,(hl)
+	setram
+	inc	hl
+	push	hl
+	and	07fh
+	ld	c,a
+	call	listy
+	pop	hl
+	pop	bc
+	djnz	c152
+	pop	bc
+	djnz	c151
+	ld	c,lf
+	call	listy
+	ld	c,cr
+	call	listy
+	jp	ci
+ endif
+;
+c16::
+ if ci.cmd ne 0
+	cp	ci.cmd		; CMD?
+	jr	nz,c17		; ----
+	ld	a,(pf10er)	; clear memory disk
+	or	a
+	ld	a,20h
+	jr	z,c17
+ci161::	call	ci.sta
+	jr	z,ci161
+	call	ci.ch
+	cp	ci.cmd
+	jp	nz,ci
+	call	md.loe
+	jp	0
+ endif
+
+; Umschluesselung des Tasten
+;
+c17::	ld	hl,tastab
+	ld	b,0+(tastae-tastab)/2
+m01301::cp	(hl)
+	jr	z,m01303	; -> Taste umschluesseln
+	inc	hl
+	inc	hl
+	djnz	m01301
+	jr	m0131		; -> Taste nicht umschluesseln
+m01303::inc	hl
+	ld	a,(hl)
+m0131::	ld	hl,cont
+	bit	2,(hl)
+	jr	z,m01310	; -> Taste war ohne ctrl gedrueckt
+	and	0bfh
+	jr	m0134		; -> keine Gross/Kleinwandlung
+m01310::cp	"A"		; Gross-/Kleinwandlung
+	jr	c,m0132
+	cp	5bh		; Umlaute nicht mitwandeln
+	jr	c,m0133
+m0132::	cp	"a"
+	jr	c,m0134
+	cp	7bh		; Umlaute nicht mitwandeln
+	jr	nc,m0134
+m0133::	ld	b,a
+	ld	a,(umsch)	; Maske fuer Gross/Kleinwandlung
+	xor	b
+m0134::
+
+c18::	ld	b,a
+	xor	a
+	ld	(pf10er),a
+	ld	a,b
+	and	07fh		; Paritaet loeschen
+	ret
+;
+;----------------------------------------------------------------------
+;
+	page	66
+; console-Ausgabe
+; ---------------
+;
+conou::				; iobyte:   00 00 00 xx
+	call	reta		;   0, 1  crt:
+	ld	hl,retu		;   2     bat:
+	push	hl		;   3     crt: + lpt:
+	push	af
+	call	iodisp
+	defb	0
+	defw	conou0
+	defw	conou1
+	defw	listx
+	defw	conou3
+conou0::
+conou1::
+	call	co.ch
+	pop	af
+	ret
+conou3::
+	push	bc
+	call	co.ch
+	pop	bc
+	call	lo.ch
+	pop	af
+	ret
+
+	include	CO.MAC
+	page	66
+; Leser-Eingabe
+; -------------
+;
+readst::call	reta
+reads1::call	iodisp
+	defb	2
+	defw	rdst0
+	defw	rdst1
+	defw	rdst2
+	defw	rdst3
+rdst0::
+rdst1::
+rdst2::
+rdst3::
+	xor	a
+	dec	a
+	jp	retu
+
+reade::				; iobyte:   00 00 xx 00
+	call	reta		;   0, 2  crt:
+reade1::call	iodisp		;   1, 3  ptr:
+	defb	2
+	defw	read0
+	defw	read1
+	defw	read2
+	defw	read3
+read0::
+read2::
+	call	ci.ch
+	jp	retu
+read1::
+read3::
+	call	ri.ch
+	and	7fh
+	jp	retu
+
+	include	RI.MAC
+	page	66
+; Drucker-Ausgabe
+; ---------------
+;
+lists::	call	reta
+	call	iodisp
+	defb	6
+	defw	lsst0
+	defw	lsst1
+	defw	lsst2
+	defw	lsst3
+
+lsst0::
+	call	lo.sta
+	jp	retu
+lsst1::
+	ld	a,0ffh		; immer bereit
+	jp	retu
+lsst2::
+lsst3::
+	call	lo1.sta
+	jp	retu
+
+list::				; iobyte:  xx 00 00 00
+	call	reta		;   0     lpt0:
+	ld	hl,retu		;   1     crt:
+	push	hl		;   2, 3  lpt1:
+listy::	push	af
+listx::	call	iodisp
+	defb	6
+	defw	list0
+	defw	list1
+	defw	list2
+	defw	list3
+
+list0::
+	call	lo.ch
+	pop	af
+	ret
+list1::
+	call	co.ch
+	pop	af
+	ret
+list2::
+list3::
+	call	lo1.ch
+	pop	af
+	ret
+;
+	include	LO.MAC
+	page	66
+; Stanzer-Ausgabe
+; ---------------
+;
+punch::				; iobyte:   00 xx 00 00
+	call	reta		;   0        crt:
+	push	af		;   1, 2     ptp:
+	call	iodisp		;   3        lpt:
+	defb	4
+	defw	punch0
+	defw	punch1
+	defw	punch2
+	defw	punch3
+punch0::
+	call	co.ch
+	pop	af
+	jp	retu
+punch1::
+punch2::
+	call	pu.ch
+	pop	af
+	jp	retu
+punch3::
+	call	lo.ch
+	pop	af
+	jp	retu
+
+	include	PU.MAC
+	page	66
+; IOBYTE-Auswertung - Verteilung auf die physischen Geraete
+; ---------------------------------------------------------
+;
+iodisp::
+	pop	hl
+	push	bc
+	push	de
+	ld	a,(hl)
+	inc	hl
+	ld	b,a
+	or	a
+	ld	a,(3)
+	jr	z,iodis2
+iodis1::
+	rra
+	djnz	iodis1
+iodis2::
+	and	3
+	rla
+	ld	c,a
+	add	hl,bc
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ex	de,hl
+	pop	de
+	pop	bc
+	jp	(hl)
+;
+	page	66
+; read/write Hilfsroutinen
+; ------------------------
+;
+setse::	ld	(sec),bc	; set sector
+	ret
+
+home::	call	reta		; head home
+	ld	bc,0
+	call	settr
+	call	setix
+	jr	z,home1		; -> geraet nicht vorhanden
+	ld	a,(ix-isblk)	; arbeitet geraet mit blockung?
+	or	a
+	jr	z,home1		; -> nein
+	ld	a,(iy+hstact)	; ist hostbuffer aktiv?
+	or	a
+	jr	z,home1		; -> nein
+	ld	a,(iy+hstwrt)	; wurde in hostbuffer geschrieben?
+	or	a
+	jr	nz,home1	; -> ja
+	ld	(iy+hstact),0	; flush hostbuffer
+home1::	jp	retu
+
+settr::	ld	(trk),bc	; set track
+	ret
+
+setdm::	ld	(dma),bc	; set memory address
+	ret
+
+selds::	ld	a,c		; select disk
+	push	bc
+	ld	(dev),a
+	add	a,a
+	ld	c,a
+	ld	b,0
+	ld	hl,dpha
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	pop	bc
+	ret
+
+sectr::	ld	a,d		; translate sector
+	or	e		; wenn de=0, dann keine transformation
+	jr	z,sectr1
+	ex	de,hl
+	add	hl,bc
+	ld	l,(hl)
+	ld	h,0
+	ret
+sectr1::ld	h,b
+	ld	l,c
+	inc	hl
+	ret
+
+setix::	ld	a,(dev)		; e/a-tabellenadresse nach ix laden
+setix1::ld	e,a
+	ld	d,0
+	ld	hl,ixtab
+	add	hl,de
+	add	hl,de
+	ld	e,(hl)
+	inc	hl
+	ld	d,(hl)
+	ld	a,e
+	or	d
+	ret	z		; -> geraet nicht vorhanden
+	push	de
+	pop	ix
+	ld	e,(ix-pcbadr)
+	ld	d,(ix-pcbadr+1)
+	push	de
+	pop	iy
+	ret
+
+; Massespeicher lesen/schreiben
+; -----------------------------
+;
+; Aufteilung auf die physischen Geraete
+;
+read::	call	reta
+	call	setix
+	jr	z,wr15		; -> Geraet nicht vorhanden
+	ld	l,(ix-ixrd)
+	ld	h,(ix-ixrd+1)
+	jr	wr14
+;
+write::	call	reta
+	call	setix
+	jr	z,wr15
+	ld	l,(ix-ixwr)
+	ld	h,(ix-ixwr+1)
+wr14::	call	callhl		; read/writeroutine aufrufen
+	jr	wr16
+;
+wr15::	ld	a,1		; Fehler: falsches Geraet
+wr16::	jp	retu
+
+	page	66
+	include	TD.MAC
+	page	66
+	include	KM.MAC
+	page	66
+	include	FL.MAC
+	page	66
+	include	MD.MAC
+	page	66
+;--------------------------------
+; Textausgabe
+; in    HL = Adresse des mit 0 abgeschlossenen Textes
+; out   Text mit co.ch ausgegeben
+;
+msgout::ld	a,(hl)
+	or	a
+	ret	z
+	inc	hl
+	ld	c,a
+	push	hl
+	call	co.ch
+	pop	hl
+	jr	msgout
+
+;---------------------------------
+; erneuter Kaltstart ist nicht erlaubt
+;
+noboot::ld	hl,nomsg
+	call	msgout
+	di
+	halt
+nomsg::	defb	cr,lf,'sorry, no boot',cr,lf,0
+
+; Warmstart
+; ---------
+;
+wboot::	di
+	ld	sp,spber
+	um.warm
+	ld	bc,80h
+	call	setdm
+
+; Geraete Warminitialisierung
+; ---------------------------
+;
+	co.warm
+	ci.warm
+	ri.warm
+	lo.warm
+	pu.warm
+	td.warm
+	km.warm
+	fl.warm
+	md.warm
+;
+	ld	a,1		; Sondertasten erlauben
+	ld	(pf10er),a
+
+; CCP und BDOS umkopieren
+; -----------------------
+;
+	ccpcop
+
+; Systemanspruenge setzen
+; -----------------------
+;
+	ld	a,(3)
+	ld	(iobyt),a
+	ld	a,(4)		; pruefen, ob current dev. gueltig ist
+	ld	d,a
+	and	0fh
+	ld	c,a
+	ld	b,0
+	ld	hl,dpha
+	add	hl,bc
+	add	hl,bc
+	ld	a,(hl)
+	inc	hl
+	or	(hl)
+	jr	z,m20		; -> nicht gueltig, also A0: anwaehlen
+	ld	a,d
+m20::	ld	(cudev),a	; aktuelles Geraet
+	ld	hl,syspa
+	ld	de,0
+	ld	bc,23
+	ldir
+	ld	c,a
+
+; Interruptsystem setzen
+; ----------------------
+;
+	ld	a,high biosan
+	ld	i,a
+	im 2
+	ei
+	ld	a,c
+	jp	biosan-1600h	; -> ccp
+
+; Spruenge fuer den Kommunikationsbereich 0-ff
+; --------------------------------------------
+;
+syspa::	jp	biosan+3	; -> wboot
+iobyt::	defb	095h		; list=lpt:/punch=ptp:/reader=ptr:/console=crt:
+cudev::	defb	0		; current device
+	defb	0c3h		; jp
+cubdos::defw	biosan-0e00h+6
+;
+ if anzakb gt 0
+	jp	kmbuse		; 0008h eintritt bamos kmb
+	jp	enduse		; 000bh	warten auf kmb-bereitschaft
+	jp	getpuf		; 000eh aus kmb-puffer in ram laden
+	defw	kmbpuf		; 0011h adresse eines hilfspuffers
+	defw	eatab1		; 0013h	adresse e/a-tabelle 1
+	defw	eatab2		; 0015h adresse e/a-tabelle 2
+ else
+	jp	0
+	jp	0
+	jp	0
+	defw	0,0,0
+ endif
+;
+	page	66
+wrdir	equ	1		; write to directory
+wrual	equ	2		; write to unallocated
+;
+;***************************************
+;
+;   eintritt deblocking
+;      ix zeigt auf Geraetetabelle
+;      iy zeigt auf buffer control block
+;
+;***************************************
+;
+deblck::ld	a,1
+	ld	(readop),a	; read operation
+	ld	a,wrual
+	ld	(wrtype),a	; treat as unalloc
+	jr	alloc
+;
+;***************************************
+;
+;   eintritt blocking
+;      ix zeigt auf Geraetetabelle
+;      iy zeigt auf buffer control block
+;
+;***************************************
+;
+block::	xor	a
+	ld	(readop),a	; write operation
+	ld	a,c
+	ld	(wrtype),a	; writetype
+	cp	wrual
+	jr	nz,chkuna
+;
+;;;;	ld	a,(sec)		; write to unallocated
+;;;;	dec	a
+;;;;	ld	c,a
+	ld	a,(ix-blklog)
+;;;;	push	af
+;;;;	dec	a
+;;;;	and	c
+;;;;	ld	c,a
+;;;;	pop	af
+;;;;	sub	c
+	ld	(iy+unacnt),a
+	ld	a,(trk)
+	ld	(iy+unatrk),a
+	ld	a,(trk+1)
+	ld	(iy+unatrk+1),a
+	ld	a,(sec)
+	ld	(iy+unasec),a
+;
+chkuna::ld	a,(iy+unacnt)	; any unallocated remain?
+	or	a
+	jr	z,alloc		; -> no
+;
+	dec	(iy+unacnt)	; unallocated records remain
+	ld	a,(iy+hstact)	; host buffer active?
+	or	a
+	jr	z,chkun1	; -> no
+	ld	a,(dev)
+	cp	(iy+hstdev)
+	jr	nz,alloc	; -> not the same device
+	ld	a,(trk)
+	cp	(iy+unatrk)
+	jr	nz,alloc	; -> not the same track
+	ld	a,(trk+1)
+	cp	(iy+unatrk+1)
+	jr	nz,alloc	; -> not the same track
+	ld	a,(sec)
+	cp	(iy+unasec)
+	jr	nz,alloc	; -> not the same sector
+;
+chkun1::inc	(iy+unasec)	; match, incr. for future
+	cp	(ix-cpmspt)	; hier sind sek. von 1 bis cpmspt nummeriert
+	jr	c,noovf
+;
+	ld	(iy+unasec),1	; track overflow
+	inc	(iy+unatrk)
+	jr	nz,noovf
+	inc	(iy+unatrk+1)
+;
+noovf::	xor	a		; match found, mark as unnecessary read
+	ld	(rsflag),a
+	jr	rwoper
+;
+alloc::	ld	(iy+unacnt),0
+	ld	a,1
+	ld	(rsflag),a	; mark as must preread
+;
+rwoper::xor	a
+	ld	(erflag),a	; no errors (yet)
+	ld	a,(ix-secshf)
+	ld	b,a
+	ld	a,(sec)
+	dec	a
+rwop01::srl	a
+	djnz	rwop01
+	ld	(sechst),a
+;
+	ld	a,(iy+hstact)	; host buffer active?
+	ld	(iy+hstact),1
+	or	a
+	jr	z,filhst	; -> no
+;
+	ld	a,(dev)		; propper sector in buffer?
+	cp	(iy+hstdev)
+	jr	nz,nomatch	; -> not the propper drive
+	ld	a,(trk)
+	cp	(iy+hsttrk)
+	jr	nz,nomatch	; -> not the propper track
+	ld	a,(trk+1)
+	cp	(iy+hsttrk+1)
+	jr	nz,nomatch	; -> not the propper track
+	ld	a,(sechst)
+	cp	(iy+hstsec)
+	jr	z,match		; -> all propper
+;
+nomatch::
+	ld	a,(iy+hstwrt)	; host written?
+	or	a
+	call	nz,writehst	; yes, write host buffer
+;
+filhst::ld	a,(sechst)
+	ld	(iy+hstsec),a
+	ld	a,(trk)
+	ld	(iy+hsttrk),a
+	ld	a,(trk+1)
+	ld	(iy+hsttrk+1),a
+	ld	a,(dev)
+	ld	(iy+hstdev),a
+	ld	(iy+hstwrt),0	; no pending write
+	ld	a,(rsflag)
+	or	a
+	call	nz,readhst	; read host buffer
+;
+match::	ld	a,(sec)
+	dec	a
+	and	(ix-secmsk)
+	ld	l,a
+	ld	h,0
+	rept	7
+	add	hl,hl
+	endm
+	ld	e,(iy+hstbuf)
+	ld	d,(iy+hstbuf+1)
+	add	hl,de
+	ld	de,(dma)
+	ld	b,128
+	ld	a,(readop)	; which way?
+	or	a
+	jr	nz,rmove	; -> read
+;
+	ld	(iy+hstwrt),1	; host buffer written
+	ex	de,hl
+wmove::	ld	a,(hl)		; uebertragen nach hostbuffer
+	sethbf
+	ld	(de),a
+	reshbf
+	inc	hl
+	inc	de
+	djnz	wmove
+	jr	retmov
+;
+rmove::	sethbf			; uebertragen vom hostbuffer
+	ld	a,(hl)
+	reshbf
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	rmove
+retmov::ld	a,(wrtype)	; write type to directory?
+	cp	wrdir
+	ld	a,(erflag)
+	ret	nz		; -> no
+	or	a		; errors?
+	ret	nz		; -> yes
+	call	writehst
+	ld	(iy+hstwrt),0
+	ld	a,(erflag)
+	ret
+;
+	page	66
+; UP's fuer host read/write
+; -------------------------
+;
+writehst::
+	push	ix		; IX auf die IX-Tabelle setzen, deren Block
+	ld	a,(iy+hstdev)	; sich im Puffer befindet
+	call	setix1
+	ld	l,(ix-hwr)
+	ld	h,(ix-hwr+1)
+	call	callhl
+	pop	ix
+	jr	rdh01
+;
+;-------------------------------
+;
+readhst::
+	ld	l,(ix-hrd)
+	ld	h,(ix-hrd+1)
+	call	callhl
+rdh01::	ld	a,0
+	jr	z,rdh02
+	inc	a
+rdh02::	ld	(erflag),a
+	ret
+;
+;-------------------------------
+;
+callhl::jp	(hl)
+;
+	page	66
+; E/A-Tabellenaufbau
+; ------------------
+;
+; Blockung/Entblockung Parameter
+; --- nur erforderlich, wenn das Geraet mit Blockung arbeitet
+;
+pcbadr	equ	15	; Adresse des Pufferkontrollblockes
+hrd	equ	13	; Adresse der Routine, die den hostbuffer fuellt
+hwr	equ	11	; Adresse der Routine, die den hostbuffer leert
+blklog	equ	9	; Anzahl der CP/M-Recorde in einem log. Block
+cpmspt	equ	8	; Sector per track        
+secshf	equ	7	; 2**secshf = Anzahl der CP/M-Recorde in einem
+;			; hostblock
+secmsk	equ	6	; schneidet secshf bits hinter heraus
+
+; allgemeine Parameter
+; --- immer erforderlich
+;
+isblk	equ	5	; 0 - geraet arbeitet ungeblockt
+ixrd	equ	4	; Adresse der Routine, welche einen Record liest
+ixwr	equ	2	; Adresse der Routine, welche einen Record schreibt
+
+; ====== IX ======> hierhin zeigt IX, wenn es mit setix geladen wurde
+
+; Geraetespezifische Parameter
+; --- kann fuer spezielle Erfordernisse des Geraetes frei belegt werden
+;
+
+
+; ====== IY ======> hierhin zeigt iy, wenn es mit setix geladen wurde
+
+; Puffer-Kontroll-Block-Aufbau
+; ----------------------------
+;
+hstbuf	equ	0	; Adresse des Puffers				word
+hstdev	equ	2	; Nr. der dev, welche den Puffer gerade belegt	byte
+hsttrk	equ	3	; Spurnr.   des im Puffer befindlichen Blockes	word
+hstsec	equ	5	; Sektornr. des im Puffer befindlichen Blockes	byte
+hstact	equ	6	; Anzeiger, ob Puffer gefuellt ist		byte
+hstwrt	equ	7	; Anzeiger, ob Puffer veraendert wurde		byte
+;
+unacnt	equ	8	; Zaehler der ohne preread ausgebbaren Recorde	byte
+unatrk	equ	9	; naechste Spurnr.   fuer Ausgabe ohne preread	word
+unasec	equ	11	; naechste Sektornr. fuer Ausgabe ohne preread	byte
+
+	page	66
+;  arbeitszellen
+;  =============
+;
+ixtab::	defw	ixa,ixb		; tabelle der ix-adresse
+	defw	ixc,ixd
+	defw	ixe,ixf
+	defw	ixg,ixh
+	defw	ixi,ixj
+	defw	ixk,ixl
+	defw	ixm,ixn
+	defw	ixo,ixp
+;
+dpha::	defw	dphga		; dph geraet a
+dphb::	defw	dphgb		;            b
+dphc::	defw	dphgc		;            c
+dphd::	defw	dphgd		;            d
+dphe::	defw	dphge		;	     e
+dphf::	defw	dphgf		;	     f
+dphg::	defw	dphgg		;	     g
+dphh::	defw	dphgh		;	     h
+dphi::	defw	dphgi		;	     i
+dphj::	defw	dphgj		;	     j
+dphk::	defw	dphgk		;	     k
+dphl::	defw	dphgl		;	     l
+dphm::	defw	dphgm		;	     m
+dphn::	defw	dphgn		;	     n
+dpho::	defw	dphgo		;	     o
+dphp::	defw	dphgp		;	     p
+;
+dma::	defw	0
+trk::	defw	0
+sec::	defw	0
+dev::	defb	0
+;
+readop::defb	0		; workspace for blocking/deblocking
+rsflag::defb	0
+wrtype::defb	0
+erflag::defb	0
+sechst::defb	0
+
+ if1
+ramend	defl	ramend-128
+dirbf	equ	ramend
+ endif
+
+ if1
+   if $ gt ramend
+     .printx ..
+     .printx ?***********************************************?
+     .printx ?**** Fehler BIOS ueberlappt Arbeitsbereich ****?
+     .printx ?***********************************************?
+     .printx ..
+   endif
+ endif
+
+;--------------------------------
+; Kaltstart
+; ---------
+;
+bootms::defb	0ch
+	mbootm
+	defb	0
+
+boot::	di
+	ld	sp,biosan-1600h
+	ld	a,high biosan
+	ld	i,a
+	um.kalt			; Speicherumschaltungen initialisieren
+;
+	ld	hl,3
+	ld	(hl),95h	; iobyte
+	inc	hl
+	ld	(hl),0		; default dev.
+
+; Gereate Kaltinitialisierung
+; ---------------------------
+;
+	co.kalt			; Bildschirm
+	ld	c,0ch
+	call	co.ch
+	ld	c,84h		; Bildschirm dunkel schalten
+	call	co.ch
+	ld	hl,0
+boot00::dec	hl
+	ld	a,h
+	or	l
+	jr	nz,boot00
+	ld	hl,bootms	; Anfangsnachricht ausgeben
+	call	msgout
+	ci.kalt			; Tastatur
+	ri.kalt			; Leser
+	lo.kalt			; Drucker
+	pu.kalt			; Stanzer
+	td.kalt			; TPA-Disk
+	km.kalt			; Kassetten
+	fl.kalt			; Floppy
+	md.kalt			; simulierte Disk
+ if ramend lt $+9
+	ld	hl,noboot	; Kaltstart totlegen
+	ld	(biosan+1),hl
+ endif
+	jp	wboot
+
+biosxx	equ	$
+
+ if1
+   if biosxx gt biosen
+   .printx ..
+   .printx ?**********************************?
+   .printx ?**** Fehler: BIOS ist zu lang ****?
+   .printx ?**********************************?
+   .printx ..
+   endif
+ endif
+
+ if2
+   if dphga eq 0
+   .printx ..
+   .printx ?******************************************?
+   .printx ?**** Fehler: kein Geraet A: vorhanden ****?
+   .printx ?******************************************?
+   .printx ..
+   endif
+ endif
+
+pmsg	macro	t,n
+	.printx * t n
+	endm
+
+ if1
+   .radix 16
+   .printx ..
+   .printx * ========================
+    pmsg    <BIOSFIX endet auf >,%bootms
+   .printx * ========================
+    pmsg    <BIOS endet auf    >,%biosxx
+   .printx * ========================
+    pmsg    <Daten beginnen auf>,%ramend
+   .printx * ========================
+   .printx ..
+   .radix 10
+ endif
+
+	.dephase
+ende::
+	end	start
+

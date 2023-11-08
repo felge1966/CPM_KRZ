@@ -1,0 +1,617 @@
+	TITLE	23.04.1987 Lade-ROM fuer Floppy 5" an AMF 5120
+
+; fuer   800K-Disketten
+;      2x200K-Disketten
+;      1x200K-Disketten
+
+	.z80
+
+;------------------------------------------------------------------------------
+; Dieser Lade-ROM springt nach 4085h, wenn dort 0c3h steht;
+; ansonsten laedt er vom LW0-1 im DS-Format/6K Directory und
+; 		     vom LW0-1 im SS-Format/2K Directory
+;------------------------------------------------------------------------------
+
+; Diese Laderoutine ist laenger und passt deshalb nicht mehr mit
+; auf den EPROM mit der BAMOS-Kassettenroutine (0248h-0bffh).
+; In Systemen mit diesem Lade-EPROM kann nur die nachladbare
+; Kassettenversion KMBOVL genutzt werden.
+
+;------------------------------------------------------------------------------
+
+; Aufbau einer doppelseitigen Diskette:
+; Spur 0: 10 Sektoren a 1024 Byte, davon 5 auf Vorderseite, 5 hinten
+; Spur 1:       "                       "                "
+; ...
+; Groesse der Verzeichnisses: 6K Byte
+; Ladeplan:  0b000h-0c7ffh  Verzeichnis
+;            0c800h-0ddffh  CCP+BDOS
+;            0de00h-0ffffh  BIOS
+; Ansprung:  0c885h wenn dort 0c3h und auf 0b000h 0,'@SYS' steht
+
+; Aufbau einer einseitigen Diskette:
+; Spur 0: 5 Sektoren a 1024 Byte
+; Spur 1:            "
+; ...
+; Groesse des Verzeichnises: 2K Byte
+; Ladeplan:  0c000h-0c7ffh  Verzeichnis
+;            0c800h-0ddffh  CCP+BDOS
+;            0de00h-0ffffh  BIOS
+; Ansprung:  0c885h wenn dort 0c3h und auf 0c000h 0,'@SYS' steht
+
+;------------------------------------------------------------------------------
+
+; Wenn auf allen vier moeglichen Laufwerken nach einem System gesucht
+; werden soll, so sind die mit ;;; gekennzeichneten Stellen zu aendern.
+
+;------------------------------------------------------------------------------
+
+ladad0	equ	0b000h		; Ladeadresse fuer DS/6k-Dir
+ladle0	equ	5000h		; Ladelaenge
+secan0	equ	10		; Anzahl der phys. Sektoren pro Spur
+
+ladad1	equ	0c000h		; Ladeadresse fuer SS/2k-Dir
+ladle1	equ	4000h		; Ladelaenge
+secan1	equ	5		; Anzahl der phys. Sektoren pro Spur
+
+reclen	equ	1024		; phys. Sektorlaenge
+startad	equ	0c885h		; Startadresse fuer das geladenen System
+
+arbber	equ	8000h		; Arbeitsbereich fuer den Urlader
+				; min. reclen+276 byte lang
+
+; Legende Speicherumschaltung KRZ1
+;
+; PIO-A
+;  0   -   E  /UNIT
+;  1   -   A  /UCS1
+;  2   -   A  /UCS2
+;  3   -   A  ZRE+Hintergrund /0+4000
+;  4   -   A  /UCS4
+;  5   -   A  8000 /ABS
+;  6   -   A  output Kassette/Drucker
+;  7   -   E  input  Kassette/Drucker
+
+; Adressen der OPS64
+;
+master	equ	0b0h		; Adresse der Master-OPS64
+;
+gein	equ	0dh		; gesamte Karte ein
+gaus	equ	0ch		;               aus
+aein	equ	6		; Sektoraktivierung ein
+aaus	equ	7		;                   aus
+gaein	equ	0ah		; Sektoraktivierung gueltig
+gaaus	equ	0bh		; alle Sektoren sind aktiviert
+sein	equ	4		; Sektorschreiberlaubnis ein
+saus	equ	5		; 		    	 aus
+gsein	equ	8		; Schreiberlaubnis fuer ausgewaehlte Bereiche
+gsaus	equ	9		; Schreiberlaubnis fuer alle Sektoren
+glein	equ	0fh		; Leseerlaubnis fuer ausgewaehlte Bereiche
+glaus	equ	0eh		; Leseerlaubnis fuer alle Sektoren
+
+	.phase	0
+
+	jp	start0
+	jp	start1
+;;;
+;;;	defb	'23.04.87 - LW0-3 - DS/SS $'
+;;;
+	defb	'23.04.87 - LW0-1 - DS/SS $'
+
+start0::di
+	ld	a,0cfh		; Speichersteuerung initialisieren, damit
+	out	(86h),a		; Stack verfuegbar wird
+	ld	a,1fh
+	out	(84h),a
+	ld	a,81h
+	out	(86h),a	
+
+	ld	c,master+gaus	; Master-OPS64 ausschalten
+	out	(c),a
+
+	ld	c,master+aaus	; Sektoren 0 bis 7 inaktiv schalten
+	ld	b,0
+sta01::	out	(c),a
+	ld	a,10h
+	add	a,b
+	ld	b,a
+	bit	7,a
+	jr	z,sta02
+	ld	c,master+aein	; Sektoren 8 bis 15 aktiv schalten
+sta02::	or	a
+	jr	nz,sta01
+
+	ld	c,master+gaein	; nur aktivierte Sektoren aktiv schalten
+	out	(c),a
+
+	ld	c,master+glein	; alle Sektoren zum Lesen freigeben
+	out	(c),a
+
+	ld	c,master+gsaus	; alle Sektoren haben Schreiberlaubnis
+	out	(c),a
+
+	ld	c,master+gein	; Master-OPS64 einschalten
+	out	(c),a
+
+	ld	a,(4085h)	; ist eine EPROM-Karte vorhanden?
+	cp	0c3h
+	jp	z,04085h	; -> ja
+
+start1::ld	sp,spber
+	xor	a
+I000E::	LD	(dev),A
+	CALL	gettr0		; ist das Geraet lesebereit?
+	OR	A
+	JR	Z,I001D		; -> ja
+I0017::	LD	A,(dev)		; naechstes Geraet
+	INC	A
+	JR	I000E
+
+; nach ladadr laden von Spur 0/1
+;
+I001D::	ld	a,(dev)
+;;;
+;;;	and	4
+;;;
+	and	2
+
+	jr	nz,I001E	; -> Laden von einseitiger Diskette
+
+; Laden von doppelseitiger Diskette versuchen
+	ld	iy,ladad0	; Ladeadresse DS/6k-Dir
+	ld	de,secan0
+	ld	b,ladle0/reclen	; Anzahl der zu ladenden Sektoren
+	jr	I001F
+
+; Laden von einseitiger Diskette versuchen
+I001E::	ld	iy,ladad1	; Ladeadresse SS/2k-Dir
+	ld	de,secan1
+	ld	b,ladle1/reclen	; Anzahl der zu ladenden Sektoren
+
+I001F::	ld	(secanz),de
+	ld	de,1		; Nr. des ersten zu ladenden Sektors
+	ld	(lada),iy
+
+; 1.-n. Datensatz lesen
+;
+I0052::	PUSH	DE
+	PUSH	BC
+	CALL	lesueb
+	JR	NZ,I0017	; -> naechstes Geraet abfragen
+	ADD	IY,BC
+	POP	BC
+	POP	DE
+	INC	DE
+	djnz	I0052
+
+; es ist alles geladen
+;
+I0074::	CALL	allaus
+	ld	hl,(lada)	; pruefen, ob ein System geladen wurde
+	ld	de,kontr
+	ld	b,konlen
+I0075::	ld	a,(de)
+	cp	(hl)
+	jr	nz,I0017	; -> kein System, da auf ladad kein '@SYS'
+	inc	hl
+	inc	de
+	djnz	I0075
+
+	ld	a,(startad)
+	cp	0c3h
+	jr	nz,I0017	; -> kein System, da auf startad kein 0c3h
+
+	ld	a,0ffh		; Motoren aus
+	out	(18h),a
+	jp	startad		; geladenes Programm starten
+
+kontr::	defb	0,'@SYS'
+konlen	equ	$-kontr
+;-----------------------
+
+; Lesen und uebertragen
+;   IY - Adresse auf die zu lesen ist
+;   DE - abs. Sektornr., des Sektors der zu lesen ist
+;
+lesueb::PUSH	IY
+	LD	A,(dev)
+	CALL	lesen
+	POP	DE		; aus Lesepuffer auf Zieladresse uebertragen
+	PUSH	BC
+	LDIR
+	POP	BC
+	OR	A
+	RET
+;-----------------------
+
+; alle select aus
+;
+allaus::LD	HL,pdaus
+
+; Ausgabe einer Port/Daten-Liste
+;   HL zeigt auf Liste: Port,Datum,Port,Datum,...,0
+;
+outtab::LD	A,(HL)
+	AND	A
+	RET	Z
+	LD	C,A
+	INC	HL
+	LD	A,(HL)
+	OUT	(C),A
+	INC	HL
+	JR	outtab
+
+; CRC-Berechnung
+;
+bercrc::ex	af,af'
+	LD	A,0e5h		; CRC-Anfangswert
+	LD	C,09ah
+	PUSH	DE
+	ex	af,af'
+I00E2::	ex	af,af'
+I00E3::	LD	E,A
+	INC	HL
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	AND	0FH
+	XOR	E
+	LD	E,A
+	RRCA
+	RRCA
+	RRCA
+	LD	D,A
+	AND	0E0H
+	XOR	(HL)
+	XOR	E
+	LD	E,A
+	LD	A,D
+	AND	1FH
+	XOR	C
+	LD	C,A
+	LD	A,D
+	RRCA
+	AND	0F0H
+	XOR	C
+	LD	C,E
+	DJNZ	I00E3
+	ex	af,af'
+	dec	a
+	ld	b,80h
+	jr	nz,I00E2
+	ex	af,af'
+	OR	C
+	POP	DE
+	RET
+;-----------------------
+
+; Lesen eines mit Sektors von soltrk,solsec
+;   in DE absolute Sektornr.
+;
+lesen::	PUSH	DE
+	call	setix
+	POP	HL
+
+	XOR	A		; aus abs. Sektornr. Spur/Sektor machen
+	ld	de,(secanz)	; DE = Anzahl der Sektoren pro Spur
+	DEC	HL		; HL = abs. Sektornummer 0..
+	LD	B,0FFH
+I013A::	INC	B
+	SBC	HL,DE
+	JR	NC,I013A
+	ADD	HL,DE
+	ld	a,secan0/2
+	inc	l		; L  = Sektornummer 1..
+	cp	l
+	ld	a,85h		; A  = side0
+	jr	nc,les01
+	ld	a,l
+	sub	secan0/2
+	ld	l,a
+	ld	a,81h		; A  = side1
+les01::	LD	H,B		; H  = Spurnummer   0..
+	LD	(solsec),HL
+	ld	(side),a
+
+; Laufwerksbereitschaft 5"Floppy ermitteln
+;   bei Rueckkehr: z - ready; nz - not ready
+;
+ready5::LD	DE,0
+	LD	A,0BFH		; Kopf laden
+	OUT	(10H),A
+I0225::	IN	A,(12H)
+	BIT	0,A
+	jr	z,I0226
+	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,I0225
+	JP	I02C2		; -> nein, nicht bereit
+
+I0226::	CALL	spursu
+	CALL	les2id
+
+I015C::	PUSH	AF
+	LD	HL,pdaus0	; AMF abschalten, Motor laufen lassen
+	CALL	outtab
+	POP	AF
+	LD	HL,datpuf+1
+	LD	BC,reclen
+	RET
+;-----------------------
+
+; Geraet auf Spur 0 fahren
+;  in A: LW-Nr.
+;
+
+gettr0::LD	HL,pdinit	; AMF initialisieren
+	PUSH	AF
+	CALL	outtab
+	POP	AF
+	CALL	setix
+	LD	A,0
+	LD	(isttrk),A
+	LD	B,2
+	CALL	steps
+	LD	B,85
+	CALL	trk0
+	JP	NZ,I02C2	; -> Spur 0 nicht gefunden
+	LD	A,0		; Geraet ist bereit zum lesen
+	JR	I015C
+;-----------------------
+
+; Floppy selektieren und AMF freischiessen
+;
+setix::	ld	hl,seltab
+;;;
+;;;	and	3
+;;;
+	and	1
+
+	ld	e,a
+	ld	d,0
+	add	hl,de
+	LD	A,0bfh
+	OUT	(10H),A
+	LD	A,0
+	OUT	(14H),A
+	IN	A,(16H)
+	LD	A,(HL)
+	OUT	(18H),A		; select Floppy
+	ret
+;-----------------------
+
+steps::	CALL	stepin
+	DJNZ	steps
+	RET
+;-----------------------
+
+trk0::	LD	c,12H
+	IN	A,(C)
+	AND	80h
+	RET	Z
+	LD	HL,D038F
+	CALL	stepou
+	DJNZ	trk0
+	INC	B
+	RET
+;-----------------------
+
+stepin::LD	HL,D0388
+stepou::CALL	outtab
+	LD	DE,200h		; ca. 5ms steprate
+
+wait::	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,wait
+	RET
+;-----------------------
+
+spursu::LD	A,(isttrk)
+	LD	B,A
+	LD	A,(soltrk)
+	SUB	B
+	JR	Z,I0241
+	LD	B,A
+	CALL	steps
+
+I0241::	LD	A,(soltrk)
+	LD	(isttrk),A
+
+	LD	C,10H		; Kopf laden
+	ld	a,0bfh
+	OUT	(C),A
+	LD	DE,1000H
+	JP	wait
+
+;-----------------------
+
+; Lesen eines Sektor-ID und eines Daten-ID nach sidpuf und datpuf
+;
+les2id::LD	E,0FFH
+I0264::	LD	C,16H		; Datenport Eingabe
+	LD	D,27		; Gaplaenge
+	LD	HL,sidpuf
+	LD	B,7
+	ld	a,1		; 1x7 byte lesen
+	PUSH	DE
+	LD	DE,900H
+	CALL	mrksu		; ID lesen
+	POP	DE
+	CP	0FEH		; Sektor-ID?
+	JR	NZ,I02BB	; -> nein
+
+	LD	B,D
+I027D::	IN	A,(C)		; gap ueberlesen
+	NOP
+	NOP
+	DJNZ	I027D
+
+	LD	HL,datpuf
+	LD	B,83H
+	ld	a,reclen/128	; x*80h byte
+	PUSH	DE
+	LD	DE,250H
+	CALL	mrksu		; ID lesen
+	POP	DE
+	CALL	setber
+
+	LD	HL,sidpuf-1	; Sektor-ID-CRC richtig?
+	LD	B,7
+	ld	a,1		; 1x80h
+	CALL	bercrc
+	JR	NZ,I02BE	; -> nein, weiter versuchen
+
+	LD	A,(sidpuf+1)	; richtige Spurnr.?
+	LD	HL,soltrk
+	CP	(HL)
+	JR	NZ,I02C2	; -> nein, abbrechen
+
+	LD	A,(sidpuf+3)	; richtige Sektornr.?
+	and	0fh		; !!! fuer 2x200K-Disketten
+	DEC	HL
+	CP	(HL)
+	JR	NZ,I02BE	; -> nein, weiter versuchen
+
+	LD	HL,datpuf-1	; Daten-ID-CRC richtig?
+	LD	B,83H
+	ld	a,reclen/128	; x*80h
+	CALL	bercrc
+	JR	NZ,I02BE	; -> nein, weiter versuchen
+
+	xor	a		; alles ok.
+	ret
+
+I02BB::	CALL	setber
+I02BE::	DEC	E
+	JR	NZ,I0264
+
+I02C2::	CALL	allaus
+	LD	A,0FFH
+	JP	I015C
+;-----------------------
+
+; Floppy ruecksetzen (bereit machen)
+;
+setber::LD	A,0A5H
+	OUT	(10H),A
+	LD	A,0BBH
+	OUT	(10H),A
+	IN	A,(16H)
+	RET
+;-----------------------
+
+; Marke suchen (FE/FB) und Daten dahinter lesen
+;   in  DE - timeout-Zeit beim Markensuchen
+;       HL - Pufferadresse
+;	C  - Portadresse
+;   out A  - Marke
+;
+mrksu::	ex	af,af'
+	LD	(HL),0
+	CALL	setber
+I0314::	LD	A,(side)	; Markenerkennung ein
+	OUT	(10H),A
+I0318::	DEC	D		; auf Marke warten
+	JR	Z,I0312		; -> time out; es kam keine
+I031B::	DEC	E
+	JR	Z,I0318
+	IN	A,(12H)
+	AND	2
+	JR	NZ,I031B
+	IN	A,(C)
+	LD	D,0
+	CP	0A1H
+	JR	NZ,I0312	; -> es kam falsche Marke
+	IN	A,(C)
+	CP	0A1H
+	JR	NZ,I0312	; -> es kam nach A1 nicht weiteres A1
+	IN	A,(C)
+	CP	0A1H
+	JR	NZ,I0312	; -> es kam nicht das 3. A1
+
+I0309::	IN	D,(C)		; FE/FB lesen
+	LD	(HL),D
+	INC	HL
+	ini
+	ex	af,af'
+I030D::	nop
+I030E::	INI			; Datensatz einlesen
+	JR	NZ,I030D
+	ld	b,80h
+	ini
+	dec	a
+	jr	nz,I030E
+I0312::	LD	A,D
+	RET
+
+;-----------------------
+
+; Befehle fuer Schrittausfuehrung
+;
+D0388::	defb	10H,0bfh
+	defb	10H,03fh
+	defb	10H,0bfh
+	defb	0
+
+D038F::	defb	10H,9fh
+	defb	10H,1fh
+	defb	10H,9fh
+	defb	0
+
+seltab::
+;;;
+;;;	defb	0eeh,0ddh,0bbh,077h
+;;;
+	defb	0e0h,0d0h
+
+pdinit::defb	15H,0FH		; AMF initialisieren
+	defb	17H,4FH
+	defb	11H,0FH
+	defb	10H,0bfh	; mit /HL
+	defb	13H,0CFH
+	defb	13H,0F7H	;   eeee aeee
+	defb	12H,0F7H
+	defb	18H,0fdh	; mit /MO
+	defb	16H,0FFH
+	defb	14H,0
+	defb	0
+
+pdaus::	defb	18H,0fdh	; mit /MO
+pdaus0::defb	10H,0bfh	; mit /HL
+	defb	12H,0FFH
+	defb	0
+
+
+	.dephase
+
+; RAM-Teil des Urladers
+; =====================
+;
+	.phase	arbber
+
+; Stackbereich
+;
+	defs	100h,0ffh
+spber::	defs	0
+
+; Arbeitsbereiche
+;
+side::	defb	0ffh		; side-select-byte 85h/81h
+lada::	defw	0ffffh		; Ladeadresse
+secanz::defw	0ffffh		; Anzahl der Sektoren pro Spur
+dev::	defb	0ffh		; LW-Nr.
+solsec::defb	0ffh		; Soll-Spurnr.
+soltrk::defb	0ffh		; Soll-Sektornr.
+isttrk::defb	0ffh
+;
+sidpuf::defs	8,0ffh		; Bereich fuer zu lesendes Sektor-ID
+;
+datpuf::defs	reclen+3,0ffh	; Bereich fuer zu lesendes Daten-ID
+
+	.dephase
+
+	END
+

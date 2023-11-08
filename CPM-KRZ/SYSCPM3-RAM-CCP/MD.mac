@@ -1,0 +1,433 @@
+ if1
+ .printx * Harddisk
+ .printx *     14.02.89 - OMTI 5510/5520/5527 - WDC 1002.WX2/1002.27X
+ .printx *                F: G: H:  aus MasterBootRecord der Harddisk
+ endif
+
+master  equ    0c000h
+
+hd.dat  equ    40h
+hd.sta  equ    41h
+hd.sel  equ    42h
+hd.res  equ    41h
+
+reqmask equ    1
+iomask  equ    2
+cdmask  equ    4
+busymask equ   8
+
+errmask equ    2
+
+md.kalt macro
+mh.kal::out    (hd.res),a
+        ld     a,5
+        ld     b,0
+mh.01:: djnz   $
+        dec    a
+        jr     nz,mh.01
+
+        in     a,(hd.sta)
+        and    7fh
+        cp     40h
+        jr     z,mh.04
+
+mh.of:: ld     hl,0
+        ld     (dphf),hl
+mh.og:: ld     hl,0
+        ld     (dphg),hl
+mh.oh:: ld     hl,0
+        ld     (dphh),hl
+        jp     mh.kax
+
+mh.04:: call   mh.ini
+        jr     nz,mh.of
+
+mh.06:: ld     b,0ffh
+mh.07:: push   bc
+        ld     hl,p00
+        call   taskout
+        call   getstat
+        pop    bc
+        jr     z,mh.08
+        djnz   mh.07
+        jr     mh.of
+
+p00::	 defb	0,0,0,0,0,0
+
+p08m::	 defb	8,0,0,0,1,5
+
+mh.08::	 ld	hl,p08m
+	 call	taskout
+
+	 call	reqwait
+	 in	a,(hd.sta)
+	 and	cdmask
+	 jr	nz,mh.of
+
+	 ld	bc,hd.dat
+	 ld	hl,master
+	 inir
+	 inir
+
+	 call	getstat
+	 jr	nz,mh.of
+
+	 ld	hl,(master+1feh)
+	 ld	de,0aa55h
+	 xor	a
+	 sbc	hl,de
+	 jr	nz,mh.of
+
+	 ld	a,(master+1bdh)
+	 inc	a
+	 jr	nz,mh.of
+
+	 ld	hl,master+1adh
+	 ld	de,p0cdat
+	 ld	bc,8
+	 ldir
+	 call	mh.ini
+	 jr	nz,mh.of
+
+	 ld	a,(master+1b5h)
+	 ld	(p080a+5),a
+
+	 ld	a,(master+1b6h)
+	 add	a,a
+	 add	a,a
+	 ld	(mh.db1),a
+	 ld	(mh.db2),a
+	 ld	(mh.db3),a
+	 ld	(mh.ix1-8),a
+	 ld	(mh.ix2-8),a
+	 ld	(mh.ix3-8),a
+
+	 ld	ix,master+1ceh
+	 ld	iy,mh.db1+2
+	 call	mh.bpa
+	 jp	nz,mh.of
+	 ld	(mh.ix1),hl
+	 ld	(mh.ix1-9),a
+
+	 ld	ix,master+1deh
+	 ld	iy,mh.db2+2
+	 call	mh.bpa
+	 jp	nz,mh.og
+	 ld	(mh.ix2),hl
+	 ld	(mh.ix2-9),a
+
+	 ld	ix,master+1eeh
+	 ld	iy,mh.db3+2
+	 call	mh.bpa
+	 jp	nz,mh.oh
+ 	 ld	(mh.ix3),hl
+	 ld	(mh.ix3-9),a
+
+	 jp	mh.kax
+
+mh.bpa:: ld	a,(ix+4)
+	 cp	0f5h
+	 ret	nz
+
+	 ld	a,(ix+15)
+	 or	a
+	 ret	nz
+	 ld	c,(ix+14)
+
+	 ld	d,(ix+13)
+	 ld	e,(ix+12)
+	 push	bc
+	 push	de
+ 	 ld	a,e
+	 sub	1
+	 ld	e,a
+	 ld	a,d
+	 sbc	a,0
+	 ld	d,a
+	 ld	a,c
+	 sbc	a,0
+	 ld	c,a
+
+	 srl	c
+	 rr	d
+	 rr	e
+
+	 ld	a,d
+	 cp	80h
+	 jr	c,mh.21
+	 pop	de
+	 pop 	bc
+	 xor	a
+	 dec	a
+	 ret
+
+mh.21::	 ld	hl,mhk32
+	 cp	40h
+	 jr	nc,mhkset
+	 ld	hl,mhk16
+	 cp	20h
+	 jr	nc,mhkset
+	 ld	hl,mhk08
+	 cp	10h
+	 jr	nc,mhkset
+	 ld	hl,mhk04
+
+mhkset:: push	iy
+	 pop	de
+	 ldi
+	 ldi
+	 ldi
+	 inc	de
+	 inc	de
+	 ldi
+	 ldi
+	 ldi
+
+	 pop	hl
+	 pop	bc
+	 ld	a,(iy)
+	 dec	a
+	 dec	a
+	 ld     b,a
+mhgrs::	 srl	c
+	 rr	h
+	 rr	l
+	 djnz	mhgrs
+	 dec	hl
+	 ld	(iy+3),l
+	 ld	(iy+4),h
+	 ld	a,h
+	 or	a
+	 jr	nz,mhgrs1
+	 ld	a,(iy+2)
+	 add	a,a
+	 inc	a
+	 ld	(iy+2),a
+mhgrs1::
+	 ld	l,(ix+3)
+	 ld	a,(ix+2)
+	 rlca
+	 rlca
+	 and	3
+	 ld	h,a
+	 add	hl,hl
+	 add	hl,hl
+	 ld	e,(ix+1)
+	 ld	d,0
+	 add	hl,de
+
+	 ld	a,1
+	 ld	b,(iy)
+	 add	a,a
+	 djnz	$-1
+	 cp	a
+	 ret
+
+mhk04::	 db	4,00fh,00h,0ffh,000h,0f0h
+mhk08::	 db	5,01fh,01h,0ffh,001h,0f0h
+mhk16::	 db	6,03fh,03h,0ffh,001h,0c0h
+mhk32::	 db     7,07fh,07h,0ffh,003h,0c0h
+
+mh.ini:: ld	hl,p0c
+	 call	taskout
+	 ld	hl,p0cdat 
+	 ld	b,8
+mh.05::	 call	reqwait
+	 ld	a,(hl)
+	 out	(hd.dat),a
+	 inc	hl
+	 djnz	mh.05
+	 call	getstat
+	 ret
+
+p0c::	 defb	0ch,0,0,0,0,0
+p0cdat:: defb	high 615,low 615
+	 defb	4
+	 defb	high 0,low 0
+	 defb	high 128,low 128
+	 defb	0
+mh.kax::
+	 endm
+
+md.warm macro
+	 endm
+
+mh.dh1:: defw	0,0,0,0
+	 defw	dirbf,mh.db1
+	 defw	0,allmh1
+
+mh.db1:: defw	4*26
+	 defb	6,3fh,3
+	 defw	8000/8-1
+	 defw   256-1
+	 defb	80h,0
+	 defw	0,0
+
+	 defw	pcbfl
+	 defw	mh.hrd
+	 defw	mh.hwr
+	 defb	64,104
+	 defb	2,3
+	 defb	1
+	 defw	deblck,block
+mh.ix1:: defw	0
+
+mh.dh2:: defw	0,0,0,0
+	 defw	dirbf,mh.db2
+	 defw	0,allmh2
+
+mh.db2:: defw	4*26
+         defb	6,3fh,3
+	 defw	8000/8-1
+	 defw	256-1
+	 defb	80h,0
+	 defw	0,0
+
+	 defw	pcbfl
+	 defw	mh.hrd
+	 defw	mh.hwr
+	 defb	64,104
+	 defb	2,3
+	 defb	1
+	 defw	deblck,block
+mh.ix2:: defw	941
+
+mh.dh3:: defw	0,0,0,0
+	 defw	dirbf,mh.db3
+	 defw	0,allmh3
+
+mh.db3:: defw	4*26
+	 defb	6,3fh,3
+	 defw	4811/8-1
+	 defw	256-1
+	 defb	80h,0
+	 defw	0,0
+	 defw	pcbfl
+	 defw	mh.hrd
+	 defw	mh.hwr
+	 defb	64,104
+	 defb	2,3
+         defb	1
+	 defw	deblck,block
+mh.ix3:: defw	2*941
+
+mh.hwr:: ld	a,0ah
+	 ld	b,0b3h
+	 jr	mh.rw
+
+mh.hrd:: ld	a,8
+	 ld	b,0b2h
+
+mh.rw::	 ld	(p080a),a
+	 ld	a,b
+	 ld	(mh.rw2+1),a
+	 ld	(mh.rw3+1),a
+
+	 ld	h,(iy+hsttrk+1)
+	 ld	l,(iy+hsttrk)
+	 ld	c,(ix+0)
+	 ld	b,(ix+1)
+	 add	hl,bc
+	 ld	a,3
+
+	 and	l
+	 ld	(p080a+1),a
+	 ld   	a,h
+	 and	0ch
+	 rlca
+	 rlca
+	 rlca
+	 rlca
+	 add	a,(iy+hstsec)
+	 ld	(p080a+2),a
+ 	 srl	h
+	 rr	l
+	 srl	h
+	 rr	l
+	 ld	a,l
+	 ld	(p080a+3),a
+
+	 ld	hl,p080a
+	 call	taskout
+	 sethbf
+	 ld	h,(iy+hstbuf+1)		
+	 ld	l,(iy+hstbuf)
+	 ld	bc,hd.dat
+mh.rw1:: call	reqwait
+	 in	a,(hd.sta)
+	 and	cdmask
+	 jr	nz,mh.rw4
+
+mh.rw2:: inir
+mh.rw3:: inir
+
+mh.rw4:: reshbf  
+	 call	getstat
+	 jp	nz,mh.err
+	 ret
+
+p080a:: defb	08h,0,0,0,1,2
+
+mh.err:: ld	hl,p03
+	 call	taskout
+	 ld	hl,ebuf
+	 ld	b,4
+mh.15::	 call	reqwait
+	 in	a,(hd.dat)
+	 ld	(hl),a
+	 inc	hl
+	 djnz	mh.15
+	 call	getstat
+	 xor	a
+	 inc	a
+	 ret
+
+p03::	 defb	3,0,0,0,1,0
+ebuf::	 defb	0,0,0,0
+
+taskout:: 
+	 in	a,(hd.sta)
+	 and	busymask
+	 jr	nz,taskout
+	 ld	a,1
+	 out	(hd.sel),a
+mh.16::	 in	a,(hd.sta)
+	 and	busymask
+	 jr	z,mh.16
+
+	 ld	b,6
+mh.17::	 call	reqwait
+	 ld	a,(hl)
+	 out	(hd.dat),a
+	 inc	hl
+	 djnz	mh.17
+	 ret
+
+getstat::
+	 call	reqwait
+	 in	a,(hd.dat)
+	 and	errmask
+	 ret
+
+reqwait::
+	 in	a,(hd.sta)
+	 and	reqmask
+	 jr	z,reqwait
+	 ret
+
+ if1
+ramend	 defl	ramend-256
+allmh1	 equ	ramend
+ramend	 defl	ramend-256
+allmh2	 equ	ramend
+ramend	 defl	ramend-256
+allmh3	 equ	ramend
+ endif
+
+dphgf	 defl	mh.dh1
+ixf	 defl	mh.ix1
+dphgg	 defl	mh.dh2
+ixg	 defl	mh.ix2
+dphgh	 defl	mh.dh3
+ixh	 defl	mh.ix3
+

@@ -1,0 +1,3271 @@
+	title	13.03.1986  nachladbare Kassettenbedienung
+;
+; 13.03.1986 (M. Krzikalla)
+
+	.z80
+
+ivctc	equ	048h		; low-Teil der Interruptverbindungszelle CTC
+ivpio	equ	050h		; low-Teil der Interruptverbindungszelle PIO's
+pkmb1	equ	30h		; Basisadresse AKB
+kk.cka	equ	0		; Nummer der benutzten CTC-Kanales fuer KMB
+kk.cba	equ	080h		; Basisadresse des benutzten CTC fuer KMB
+
+; ROBOTRON Kassettenroutine
+;
+kmbvers	equ	13		; KMB-BAMOS Version 1.3
+
+ if2
+kmbrob	equ	ks.brk		; Eintrittsadresse in BAMOS KMB
+kmbruc	equ	ku.ber		; Eintrittsadresse Bereitroutine
+kmbini	equ	kp.ini		; Eintrittsadresse Initialisierung
+ endif
+
+
+
+start::
+; Startnachricht geben
+	ld	de,ms1
+	ld	c,9
+	call	5
+
+; testen, ob Geraete N: und O: schon installiert sind
+	ld	ix,(6)
+	ld	a,(ix+3)
+	cp	'K'
+	jr	nz,ms02		; -> sie sind es noch nicht
+	ld	a,(ix+4)
+	cp	'M'
+	jr	nz,ms02		; -> sie sind es noch nicht
+	ld	a,(ix+5)
+	cp	'B'
+	jr	nz,ms02		; -> sie sind es noch nicht
+
+	ld	de,ms3		; Fehler: N ist schon vorhanden
+	ld	c,9
+	call	5
+	ret
+
+ms02::	ld	de,ms4		; die Lade/Entladetasten erfragen
+	ld	c,9
+	call	5
+	ld	c,1
+	call	5
+	ld	(le1tas+1),a
+
+ms03::	push	af
+	ld	de,ms5
+	ld	c,9
+	call	5
+	ld	c,1
+	call	5
+	pop	bc
+	cp	b
+	jr	z,ms03
+	ld	(le2tas+1),a
+
+ms04::	ld	de,ms6		; Entfernetaste erfragen
+	ld	c,9
+	call	5
+	ld	c,1
+	call	5
+	ld	b,a
+	ld	a,(le1tas+1)
+	cp	b
+	jr	z,ms04
+	ld	a,(le2tas+1)
+	cp	b
+	jr	z,ms04
+	ld	a,b
+	ld	(enttas+1),a
+
+	ld	de,ms2
+	ld	c,9
+	call	5
+
+; die folgenden BIOS-Routinen mit einem Henkel versehen:
+;
+;   WBOOT
+;   CONST, CONIN
+;   HOME,SELDSK,SETTRK,SETSEC,SETDMA,READ,WRITE
+;
+	ld	hl,(1)		; alten Sprungvektor retten
+	ld	de,xwboot
+	ld	bc,tablen
+	push	bc
+	push	hl
+	ldir
+
+	pop	de		; neuen Sprungvektor eintragen
+	pop	bc
+	ld	hl,neuvek
+	ldir
+
+	ld	hl,(6)		; BDOS-Einsprung unter Kassettenbedienung legen
+	ld	(bdos+1),hl
+	ld	hl,bdos
+	ld	(6),hl
+
+	ld	hl,jppar	; Spruenge in KMB in den Kommunikationsbereich
+	ld	de,8		; eintragen
+	ld	bc,jpparl
+	ldir
+
+	ld	a,i		; Interruptadressen in die Saeule eintragen
+	ld	h,a
+	ld	l,ivctc+kk.cka+kk.cka
+	ld	de,kc.ict
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+	ld	l,ivpio
+	ld	de,iopio
+	ld	bc,12
+	ex	de,hl
+	ldir
+
+km.kal::ld	ix,eatab1
+	call	kmbint
+	ld	a,10h		; status nicht bereit setzen
+	ld	(eatab1),a
+	ld	(eatab2),a
+	xor	a
+	ld	(eatab1+gelade),a
+	ld	(eatab2+gelade),a
+
+	pop	hl		; CCP-Ansprungadresse uebernehmen
+	ld	(jpccp+1),hl
+	push	hl
+	ret			; -> zurueck zum CCP
+
+; Interruptvektoren KMB-Routine
+iopio::	defw	ki.iau		; int.beh. ausgabekanal
+	defw	ki.ier		; int.beh. e-kanal RAW
+	defw	ki.iel		; int.beh. e-kanal lesen
+	defw	ki.ist		; int.beh. status
+	defw	ki.ibe		; int.beh. bandende
+	defw	ki.ibl		; int.beh. blindint.
+;
+jppar::	jp	kmbuse		; 0008h eintritt bamos kmb
+	jp	enduse		; 000bh	warten auf kmb-bereitschaft
+	jp	getpuf		; 000eh aus kmb-puffer in ram laden
+	defw	kmbpuf		; 0011h adresse eines hilfspuffers
+	defw	eatab1		; 0013h	adresse e/a-tabelle 1
+	defw	eatab2		; 0015h adresse e/a-tabelle 2
+jpparl	equ	$-jppar
+
+cr	equ	0dh
+lf	equ	0ah
+
+ms1::	defb	0ch,cr,lf
+	defb	"Kassettenbedienung N: und O: vom 13.3.1986",cr,lf
+	defb	"==========HUB/IV  (M. Krzikalla)==========",cr,lf,lf,'$'
+
+ms2::	defb	cr,lf,lf
+	defb	"Bedienung fuer N: und O: ist jetzt geladen.",cr,lf
+	defb	"Basisadresse AKB:                      30h",cr,lf
+	defb	"Adresse des benutzten CTC:             80h",cr,lf
+	defb	"belegte Plaetze in der Interruptsaule: xx48,xx50-xx5b",cr,lf
+	defb	"$"
+
+	ms3::	defb	"Kassettenbedienung ist schon installiert!",cr,lf,"$"
+
+ms4::	defb	"Bitte die Taste betaetigen, welche N: laden/entladen soll: $"
+
+ms5::	defb	cr,lf
+	defb	"Bitte die Taste betaetigen, welche O: laden/entladen soll: $"
+
+ms6::	defb	cr,lf
+	defb	"Bitte die Taste betaetigen, welche N: und O: entfernen soll."
+	defb	cr,lf
+	defb	"Die Taste ist nur dann aktiv, wenn  N: und O: entladen sind."
+	defb	cr,lf
+	defb	"Des belegte Speicherplatz wird erst beim naechsten Warmstart"
+	defb	cr,lf
+	defb	"wieder freigegeben.$"
+
+;------------------------------------------------------------------------------
+
+	defs	100h-(($-start) and 0ffh),0
+
+	defs	6,0
+bdos::	jp	0		; originaler Einsprung in BDOS
+	defb	'KMB-1303'
+
+xwboot::jp	0		; original Sprungvektor des BIOS
+xconst::jp	0
+xconin::jp	0
+xconou::jp	0
+xlist::	jp	0
+xpunch::jp	0
+xreade::jp	0
+xhome::	jp	0
+xselds::jp	0
+xsettr::jp	0
+xsetse::jp	0
+xsetdm::jp	0
+xread::	jp	0
+xwrite::jp	0
+xlists::jp	0
+xsectr::jp	0
+
+neuvek::jp	wboot		; Ersatz Sprungvektor fuer BIOS
+	jp	const
+	jp	conin
+	jp	xconou
+	jp	xlist
+	jp	xpunch
+	jp	xreade
+	jp	home
+	jp	selds
+	jp	settr
+	jp	setse
+	jp	setdm
+	jp	read
+	jp	write
+	jp	xlists
+	jp	xsectr
+
+tablen	equ	$-neuvek
+
+; erweiterte CP/M-Routinen
+;
+wboot::	ld	a,(4)
+	and	0fh
+	ld	c,a
+jpccp::	jp	0
+
+;--------------------------------
+
+const::	ld	a,(zei)
+	or	a
+	ld	a,0ffh
+	ret	nz		; -> es ist ein Zeichen bereit
+	call	xconst
+	or	a
+	ret	z		; -> es ist kein Zeichen bereit
+	call	xconin
+le1tas::cp	0
+	jr	z,le1		; -> Kassette 1 laden/entladen
+le2tas::cp	0
+	jr	z,le2		; -> Kassette 2 laden/entladen
+enttas::cp	0
+	jr	z,entlad	; -> KMB-Bedienung wieder entfernen
+	ld	(zei),a
+	jr	const
+
+le1::	ld	(spret),sp
+	ld	sp,spber
+	call	km.ka1
+	ld	sp,(spret)
+	jr	const
+
+le2::	ld	(spret),sp
+	ld	sp,spber
+	call	km.ka2
+	ld	sp,(spret)
+	jr	const
+
+entlad::push	hl
+	push	de
+	push	bc
+	ld	a,(eatab1+gelade)
+	or	a
+	jr	nz,entla1
+	ld	a,(eatab2+gelade)
+	or	a
+	jr	nz,entla1
+	ld	de,(1)		; alten Zustand des Sprungvektors herstellen
+	ld	hl,xwboot
+	ld	bc,tablen
+	ldir
+entla1::pop	bc
+	pop	de
+	pop	hl
+	jr	const
+
+;--------------------------------
+
+conin::	call	const
+	or	a
+	jr	z,conin
+	push	hl
+	ld	hl,zei
+	ld	a,(hl)
+	ld	(hl),0
+	pop	hl
+	ret
+
+;--------------------------------
+
+home::	ld	bc,0
+	ld	(trk),bc
+	jp	xhome		; zum CP/M-home
+
+;--------------------------------
+
+selds::	ld	a,c
+	cp	'N'-'A'
+	ld	(dev),a
+	jr	nz,sd0
+	ld	hl,(dphn)
+	ret
+sd0::	cp	'O'-'A'
+	jp	nz,xselds	; zum CP/M-seldsk
+	ld	hl,(dpho)
+	ret
+
+;--------------------------------
+
+settr::	ld	(trk),bc
+	jp	xsettr		; zum CP/M-settrk
+
+;--------------------------------
+
+setse::	ld	(sec),bc
+	jp	xsetse		; zum CP/M-setsec
+
+;--------------------------------
+
+setdm::	ld	(dma),bc
+	jp	xsetdm		; zum CP/M-setdma
+
+;--------------------------------
+
+read::	ld	a,(dev)
+	cp	'N'-'A'
+	jr	z,re0
+	cp	'O'-'A'
+	jp	nz,xread	; zum CP/M-read
+re0::	jp	nread
+
+;--------------------------------
+
+write::	ld	a,(dev)
+	cp	'N'-'A'
+	jr	z,wr0
+	cp	'O'-'A'
+	jp	nz,xwrite	; zum CP/M-write
+wr0::	jp	nwrite
+
+;--------------------------------
+
+; Stackrettung
+; ------------
+;
+reta::	ex	(sp),hl
+	ld	(spret),sp
+	ld	sp,spber
+	push	de
+	push	bc
+	push	ix
+	push	iy
+	jp	(hl)
+;
+retu::	pop	iy
+	pop	ix
+	pop	bc
+	pop	de
+	ld	sp,(spret)
+	pop	hl
+return::ret
+
+;--------------------------------
+setix::	ld	a,(dev)		; e/a-tabellenadresse nach ix laden
+setix1::cp	'N'-'A'
+	jr	nz,setix2
+	ld	ix,eatab1
+	jr	setix3
+setix2::cp	'O'-'A'
+	jr	nz,setix4
+	ld	ix,eatab2
+setix3::
+	ld	e,(ix-pcbadr)
+	ld	d,(ix-pcbadr+1)
+	push	de
+	pop	iy
+	xor	a
+	inc	a
+	ret			; -> Geraet vorhanden
+
+setix4::xor	a
+	ret			; -> Geraet nicht vorhanden
+
+; Massespeicher lesen/schreiben
+; -----------------------------
+;
+; Aufteilung auf die physischen Geraete
+;
+nread::	call	reta
+	call	setix
+	jr	z,wr13		; -> Geraet nicht vorhanden
+	ld	l,(ix-ixrd)
+	ld	h,(ix-ixrd+1)
+	jr	wr14
+
+wr13::	call	xread
+	jp	retu
+;
+nwrite::call	reta
+	call	setix
+	jr	z,wr15
+	ld	l,(ix-ixwr)
+	ld	h,(ix-ixwr+1)
+wr14::	call	callhl		; read/writeroutine aufrufen
+	jp	retu
+
+wr15::	call	xwrite
+	jp	retu
+
+;--------------------------------
+
+wrdir	equ	1		; write to directory
+wrual	equ	2		; write to unallocated
+;
+;***************************************
+;
+;   eintritt deblocking
+;      ix zeigt auf Geraetetabelle
+;      iy zeigt auf buffer control block
+;
+;***************************************
+;
+deblck::ld	a,1
+	ld	(readop),a	; read operation
+	ld	a,wrual
+	ld	(wrtype),a	; treat as unalloc
+	jr	alloc
+;
+;***************************************
+;
+;   eintritt blocking
+;      ix zeigt auf Geraetetabelle
+;      iy zeigt auf buffer control block
+;
+;***************************************
+;
+block::	xor	a
+	ld	(readop),a	; write operation
+	ld	a,c
+	ld	(wrtype),a	; writetype
+	cp	wrual
+	jr	nz,chkuna
+;
+;;;;	ld	a,(sec)		; write to unallocated
+;;;;	dec	a
+;;;;	ld	c,a
+	ld	a,(ix-blklog)
+;;;;	push	af
+;;;;	dec	a
+;;;;	and	c
+;;;;	ld	c,a
+;;;;	pop	af
+;;;;	sub	c
+	ld	(iy+unacnt),a
+	ld	a,(trk)
+	ld	(iy+unatrk),a
+	ld	a,(trk+1)
+	ld	(iy+unatrk+1),a
+	ld	a,(sec)
+	ld	(iy+unasec),a
+;
+chkuna::ld	a,(iy+unacnt)	; any unallocated remain?
+	or	a
+	jr	z,alloc		; -> no
+;
+	dec	(iy+unacnt)	; unallocated records remain
+	ld	a,(iy+hstact)	; host buffer active?
+	or	a
+	jr	z,chkun1	; -> no
+	ld	a,(dev)
+	cp	(iy+hstdev)
+	jr	nz,alloc	; -> not the same device
+	ld	a,(trk)
+	cp	(iy+unatrk)
+	jr	nz,alloc	; -> not the same track
+	ld	a,(trk+1)
+	cp	(iy+unatrk+1)
+	jr	nz,alloc	; -> not the same track
+	ld	a,(sec)
+	cp	(iy+unasec)
+	jr	nz,alloc	; -> not the same sector
+;
+chkun1::inc	(iy+unasec)	; match, incr. for future
+	cp	(ix-cpmspt)	; hier sind sek. von 1 bis cpmspt nummeriert
+	jr	c,noovf
+;
+	ld	(iy+unasec),1	; track overflow
+	inc	(iy+unatrk)
+	jr	nz,noovf
+	inc	(iy+unatrk+1)
+;
+noovf::	xor	a		; match found, mark as unnecessary read
+	ld	(rsflag),a
+	jr	rwoper
+;
+alloc::	ld	(iy+unacnt),0
+	ld	a,1
+	ld	(rsflag),a	; mark as must preread
+;
+rwoper::xor	a
+	ld	(erflag),a	; no errors (yet)
+	ld	a,(ix-secshf)
+	ld	b,a
+	ld	a,(sec)
+	dec	a
+rwop01::srl	a
+	djnz	rwop01
+	ld	(sechst),a
+;
+	ld	a,(iy+hstact)	; host buffer active?
+	ld	(iy+hstact),1
+	or	a
+	jr	z,filhst	; -> no
+;
+	ld	a,(dev)		; propper sector in buffer?
+	cp	(iy+hstdev)
+	jr	nz,nomatch	; -> not the propper drive
+	ld	a,(trk)
+	cp	(iy+hsttrk)
+	jr	nz,nomatch	; -> not the propper track
+	ld	a,(trk+1)
+	cp	(iy+hsttrk+1)
+	jr	nz,nomatch	; -> not the propper track
+	ld	a,(sechst)
+	cp	(iy+hstsec)
+	jr	z,match		; -> all propper
+;
+nomatch::
+	ld	a,(iy+hstwrt)	; host written?
+	or	a
+	call	nz,writehst	; yes, write host buffer
+;
+filhst::ld	a,(sechst)
+	ld	(iy+hstsec),a
+	ld	a,(trk)
+	ld	(iy+hsttrk),a
+	ld	a,(trk+1)
+	ld	(iy+hsttrk+1),a
+	ld	a,(dev)
+	ld	(iy+hstdev),a
+	ld	(iy+hstwrt),0	; no pending write
+	ld	a,(rsflag)
+	or	a
+	call	nz,readhst	; read host buffer
+;
+match::	ld	a,(sec)
+	dec	a
+	and	(ix-secmsk)
+	ld	l,a
+	ld	h,0
+	rept	7
+	add	hl,hl
+	endm
+	ld	e,(iy+hstbuf)
+	ld	d,(iy+hstbuf+1)
+	add	hl,de
+	ld	de,(dma)
+	ld	b,128
+	ld	a,(readop)	; which way?
+	or	a
+	jr	nz,rmove	; -> read
+;
+	ld	(iy+hstwrt),1	; host buffer written
+	ex	de,hl
+wmove::	ld	a,(hl)		; uebertragen nach hostbuffer
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	wmove
+	jr	retmov
+;
+rmove::				; uebertragen vom hostbuffer
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	rmove
+retmov::ld	a,(wrtype)	; write type to directory?
+	cp	wrdir
+	ld	a,(erflag)
+	ret	nz		; -> no
+	or	a		; errors?
+	ret	nz		; -> yes
+	call	writehst
+	ld	(iy+hstwrt),0
+	ld	a,(erflag)
+	ret
+;
+	page	66
+; UP's fuer host read/write
+; -------------------------
+;
+writehst::
+	push	ix		; IX auf die IX-Tabelle setzen, deren Block
+	ld	a,(iy+hstdev)	; sich im Puffer befindet
+	call	setix1
+	ld	l,(ix-hwr)
+	ld	h,(ix-hwr+1)
+	call	callhl
+	pop	ix
+	jr	rdh01
+;
+;-------------------------------
+;
+readhst::
+	ld	l,(ix-hrd)
+	ld	h,(ix-hrd+1)
+	call	callhl
+rdh01::	ld	a,0
+	jr	z,rdh02
+	inc	a
+rdh02::	ld	(erflag),a
+	ret
+;
+;-------------------------------
+;
+callhl::jp	(hl)
+;
+	page	66
+; E/A-Tabellenaufbau
+; ------------------
+;
+; Blockung/Entblockung Parameter
+; --- nur erforderlich, wenn das Geraet mit Blockung arbeitet
+;
+pcbadr	equ	15	; Adresse des Pufferkontrollblockes
+hrd	equ	13	; Adresse der Routine, die den hostbuffer fuellt
+hwr	equ	11	; Adresse der Routine, die den hostbuffer leert
+blklog	equ	9	; Anzahl der CP/M-Recorde in einem log. Block
+cpmspt	equ	8	; Sector per track        
+secshf	equ	7	; 2**secshf = Anzahl der CP/M-Recorde in einem
+;			; hostblock
+secmsk	equ	6	; schneidet secshf bits hinter heraus
+
+; allgemeine Parameter
+; --- immer erforderlich
+;
+isblk	equ	5	; 0 - geraet arbeitet ungeblockt
+ixrd	equ	4	; Adresse der Routine, welche einen Record liest
+ixwr	equ	2	; Adresse der Routine, welche einen Record schreibt
+
+; ====== IX ======> hierhin zeigt IX, wenn es mit setix geladen wurde
+
+; Geraetespezifische Parameter
+; --- kann fuer spezielle Erfordernisse des Geraetes frei belegt werden
+;
+
+
+; ====== IY ======> hierhin zeigt iy, wenn es mit setix geladen wurde
+
+; Puffer-Kontroll-Block-Aufbau
+; ----------------------------
+;
+hstbuf	equ	0	; Adresse des Puffers				word
+hstdev	equ	2	; Nr. der dev, welche den Puffer gerade belegt	byte
+hsttrk	equ	3	; Spurnr.   des im Puffer befindlichen Blockes	word
+hstsec	equ	5	; Sektornr. des im Puffer befindlichen Blockes	byte
+hstact	equ	6	; Anzeiger, ob Puffer gefuellt ist		byte
+hstwrt	equ	7	; Anzeiger, ob Puffer veraendert wurde		byte
+;
+unacnt	equ	8	; Zaehler der ohne preread ausgebbaren Recorde	byte
+unatrk	equ	9	; naechste Spurnr.   fuer Ausgabe ohne preread	word
+unasec	equ	11	; naechste Sektornr. fuer Ausgabe ohne preread	byte
+
+
+; Kassettenbedienung K5221
+;
+; 01.11.1985 (Manfred Krzikalla)
+
+ if1
+    .printx * Kassetten
+    .printx *     01.11.85 - 1 x K5221 als N: und O:
+ endif
+
+erranz	equ	10		; Anzahl der Fehlerwiederholungen
+
+; Kassetten initialisieren
+; ------------------------
+;
+kmbint::call	kmbini
+	ld	a,(ix+2)	; existiert diese AKB?
+	add	a,4
+	ld	c,a
+	in	a,(c)
+	cp	83h
+	ret	nz		; -> nein
+	ld	(ix+kmexis),1
+	ld	(ix+kmexis+(eatab2-eatab1)),1
+	ret
+;
+km.kalt	macro
+km.kal::ld	ix,eatab1
+	call	kmbint
+	ld	a,10h		; status nicht bereit setzen
+	ld	(eatab1),a
+	ld	(eatab2),a
+	xor	a
+	ld	(eatab1+gelade),a
+	ld	(eatab2+gelade),a
+	endm
+
+km.warm	macro
+km.war::
+	endm
+	page	66
+; Bedienung der Lade-/Entladetasten
+; ---------------------------------
+;
+km.ka1::ld	ix,eatab1
+	ld	hl,dphn
+	ld	de,dphc1
+
+km.le::	push	hl		; Kassette laden/entladen
+	push	de
+	ld	a,(ix+kmexis)
+	or	a
+	jr	z,km.le2	; -> AKB existiert nicht
+	ld	a,(ix+gelade)
+	or	a
+	ld	c,(ix-pcbadr)
+	ld	b,(ix-pcbadr+1)
+	push	bc
+	pop	iy
+	jr	nz,km.le1	; -> entladen
+	call	clad		; laden
+	pop	de
+	pop	hl
+	jr	nz,km.le3	; -> fehler beim laden
+	ld	(hl),e		; Geraet als geladen in dph-tabelle eintragen
+	inc	hl
+	ld	(hl),d
+	jr	km.le3
+;
+km.le1::call	centl		; entladen
+km.le2::pop	de
+	pop	hl
+	ld	(hl),0		; Geraet aus dph-tabelle streichen
+	inc	hl
+	ld	(hl),0
+km.le3::ret
+
+km.ka2::ld	ix,eatab2
+	ld	hl,dpho
+	ld	de,dphc2
+	jr	km.le
+
+	page	66
+; lesen / schreiben Kassetten geblockt
+; ------------------------------------
+; lesen
+; +++++
+;
+rdkmb::	ld	a,(ix+gelade)	; Test, ob Kassette noch geladen ist
+	or	a
+	jr	z,rdk03		; -> nein, Fehler
+	ld	a,(trk)
+	or	a
+	jp	nz,deblck	; -> nicht aus hs lesen
+	ld	de,(dma)	; aus dpuf lesen
+	call	diradr
+	ld	b,128
+rdk01::	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	djnz	rdk01
+	xor	a
+	ret
+;
+hrdkmb::ld	a,erranz
+	ld	(rderr),a
+rdk01a::call	cposx
+	jr	nz,rdk03	; -> fehler melden
+	call	lesen
+	jr	z,rdk04
+rdk02::	ld	a,(rderr)	; weitere versuch?
+	dec	a
+	ld	(rderr),a
+	jr	nz,rdk01a	; -> ja
+rdk03::	xor	a		; fehler melden
+	inc	a
+	ret
+rdk04::	ld	a,(ix+ealen)
+	cp	1
+	jr	nz,rdk02
+	ld	b,a
+	ld	a,(ix+ealen+1)
+	or	a
+	jr	nz,rdk02
+	ld	c,a
+	ld	l,(ix+eaadr)
+	ld	h,(ix+eaadr+1)
+	ld	e,(iy+hstbuf)
+	ld	d,(iy+hstbuf+1)
+	ldir
+	xor	a
+	ret
+	page	66
+; schreiben
+; +++++++++
+;
+wrkmb::	ld	a,(ix+gelade)	; test, ob kassette noch geladen ist
+	or	a
+	jr	z,wrk02		; -> nein
+	ld	a,(trk)
+	or	a
+	jp	nz,block	; -> nicht nach dir im hs schreiben
+;
+	call	diradr
+	ex	de,hl		; in dpuf schreiben
+	ld	hl,(dma)
+	ld	(ix+eadzei),1	; es wurde in directory geschrieben
+	ld	b,128
+wrk01::	ld	a,(hl)
+	ld	(de),a
+	inc 	hl
+	inc	de
+	djnz	wrk01
+	xor	a
+	ret
+;
+wrk02::	xor	a		; Fehler melden
+	inc	a
+	ret
+;
+hwrkmb::ld	a,erranz
+	ld	(rderr),a
+wrk03::	call	cposx
+	jr	nz,wrk02	; -> fehler melden
+	ld	(ix+ealen),1
+	ld	(ix+ealen+1),0
+	ld	a,(iy+hstbuf)
+	ld	(ix+eaadr),a
+	ld	a,(iy+hstbuf+1)
+	ld	(ix+eaadr+1),a
+ if kmbvers eq 13
+	ld	a,80h		; schreiben ohne fehlerwiederholung
+ else
+	ld	a,0		; schreiben mit fehlerwiederholung
+ endif
+	call	kmb
+	ret	z		; -> alles ok
+	ld	a,(rderr)	; weiterer versuch?
+	dec	a
+	ld	(rderr),a
+	jr	nz,wrk03	; -> ja
+	jr	wrk02		; -> nein
+;
+	page	66
+; Unterprogramme lesen/schreiben
+; ++++++++++++++++++++++++++++++
+;
+cposx::	ld	l,(iy+hstsec)
+	ld	h,(iy+hsttrk)
+	ld	(was),hl
+	call	cpos
+	ret
+;
+;----------------------------------------------------------------------
+;
+diradr::ld	hl,(sec)	; in hl diradr bilden
+	dec	hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	c,(ix+eadpuf)	; bc = dpuf
+	ld	b,(ix+eadpuf+1)
+	add	hl,bc
+	ret
+	page	66
+;   Kassettenroutinen   laden / entladen / positionieren
+;   ----------------------------------------------------
+;
+; kassette laden geblockt
+; +++++++++++++++++++++++
+;
+clad::	ld	a,31h		; reservieren ein
+	call	kmb
+	bit	4,(ix+eastat)
+	jr	nz,sp26
+;
+	call	rucksp		; rueckspulen
+	call	endruc		; auf ende warten
+;
+	call	filpar
+sp21::	push	de		; dirpufferadresse
+	call	readhst		; 8 mal 256 byte lesen
+	pop	de
+	jr	nz,sp25		; -> fehler
+	ld	l,(iy+hstbuf)
+	ld	h,(iy+hstbuf+1)
+	ld	bc,256
+	ldir			; von hostbuf auf cpu in dirbuf uebertr.
+	inc	(iy+hstsec)
+	bit	3,(iy+hstsec)	; 0/8 schon erreicht?
+	jr	z,sp21		; -> nein
+;
+	xor	a		; laden ok
+	ld	(ix+eadzei),a	; in directory wurde noch nicht geschrieben
+	ld	(iy+hstact),a	; host buffer inactive
+	ld	(iy+unacnt),a	; no unallocated recs
+	ld	(ix+gelade),1	; kassette ist geladen
+	ret
+;
+;--------------------------------
+;
+sp25::	call	rucksp		; fehler beim laden
+sp26::	ld	a,41h		; reservieren aus
+	call	kmb
+	xor	a
+	ld	(ix+gelade),a	; kassette ist nicht geladen
+	inc	a
+	ret
+;
+	page	66
+; kassette entladen geblockt
+; ++++++++++++++++++++++++++
+;
+centl::	ld	a,(iy+hstact)	; ist puffer aktiv?
+	or	a
+	jr	z,sp301		; -> nein
+	ld	a,(iy+hstwrt)	; wurde in puffer geschrieben?
+	or	a
+	jr	z,sp301
+	call	writehst	; ja, puffer entleeren
+	jr	z,sp301
+	ld	hl,ceerro
+	ld	b,ceerre-ceerro
+sp300::	push	hl
+	push	bc
+	ld	c,(hl)
+	call	xconou
+	pop	bc
+	pop	hl
+	inc	hl
+	djnz	sp300
+sp301::	ld	a,(ix+eadzei)	; wurde directory veraendert?
+	or	a
+	jr	z,sp32		; -> nein
+	call	rucksp		; rueckspulen
+	call	endruc		; auf ende warten
+	call	filpar
+	ex	de,hl		; dirpufferadresse
+sp31::	ld	e,(iy+hstbuf)	; aus dirpuffer in host buffer uebertragen
+	ld	d,(iy+hstbuf+1)
+	ld	bc,256
+	ldir			; aus dirbuf in hostbuf auf cpu uebertragen
+	push	hl
+	call	writehst
+	pop	hl
+	jr	nz,sp25		; -> fehler
+	inc	(iy+hstsec)
+	bit	3,(iy+hstsec)	; 0/8 erreicht?
+	jr	z,sp31		; -> nein
+sp32::	call	rucksp		; rueckspulen
+	ld	a,41h		; reservieren aus
+	call	kmb
+	ld	(ix+gelade),0	; kassette ist nicht geladen
+	ret
+ceerro::defb	lf,'Entladefehler',cr,lf
+ceerre::
+	page	66
+; UP's
+; ++++
+;
+rucksp::ld	a,21h
+	call	kmb
+	jr	nz,rucksp
+	ret
+endruc::call	kmbruc		; kmb-bereitroutine
+	jr	c,endruc	; -> nicht bereit
+	ret
+lesen::	xor	a
+	ld	(richtu),a
+ if kmbvers eq 13
+	ld	a,82h		; lesen ohne fehlerwiederholung
+ else
+	ld	a,2
+ endif
+	call	kmb
+	ret
+konlen::ld	a,(ix+ealen)
+	cp	b
+	ret	nz
+	ld	a,(ix+ealen+1)
+	cp	c
+	ret
+konsent::push	bc
+	ld	bc,12
+	call	konlen
+	pop	bc
+	ret	nz
+	push	iy
+	push	hl
+	ld	l,(ix+eaadr)	; iy := (adr)
+	ld	h,(ix+eaadr+1)
+	ld	(arb),hl
+	ld	iy,(arb)
+	pop	hl
+	ld	a,(iy+1)
+	cp	d
+	jr	nz,konse1
+	ld	a,(iy+2)
+	cp	e
+konse1::pop	iy
+	ret
+
+filpar::ld	(iy+hstsec),0
+	ld	(iy+hsttrk),0
+	ld	(ix+eawovo),0
+	ld	(ix+eawovo+1),0
+	ld	e,(ix+eadpuf)
+	ld	d,(ix+eadpuf+1)
+	ret
+	page	66
+; kassette positionieren
+; ++++++++++++++++++++++
+;
+cpos::	ld	a,erranz	; nach erranz fehlversuchen abbruch
+	ld	(errcou),a
+;
+sp40::	ld	bc,(was)
+	ld	e,(ix+eawovo)
+	ld	d,(ix+eawovo+1)
+	ld	a,e		; steht mb vor bandmarke?
+	cp	8
+	jr	c,sp41
+;
+	call	lesen		; ja
+	inc	d
+	ld	e,0
+;
+sp41::	ld	a,b
+	cp	d
+	jr	nz,sp45
+	ld	a,c
+	cp	e
+	jr	nz,sp43
+;
+; === was = wovor
+;
+	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+	call	konsent
+	jr	nz,sp42		; -> fehler: mb stand an falscher stelle
+;
+	inc	e
+	ld	(ix+eawovo),e
+	ld	(ix+eawovo+1),d
+	xor	a
+	ret
+;
+;----------------
+;
+sp42::	call	fehler		; fehlerbehandlung
+	ld	hl,errcou	; nochmaliger versuch?
+	dec	(hl)
+	jr	nz,sp40		; -> ja
+;
+	xor	a		; fehler zurueckmelden
+	inc	a
+	ret
+;
+;----------------
+;
+sp43::	ld	a,c
+	cp	e
+	jr	nc,sp44
+;
+; === was.blk = wovor.blk  and  was.rec < wovor.rec
+;
+	ld	a,1
+	ld	(richtu),a
+	ld	a,15h		; 2 bloecke ruecksetzen
+	call	kmb
+	jr	nz,sp42		; -> fehler: beim record ruecksetzen
+	ld	a,15h
+	call	kmb
+	jr	nz,sp42		; -> fehler: beim record ruecksetzen
+	dec	e		; wovor.rec := wovor.rec - 1
+	jr	sp41
+;
+;----------------
+;
+; === was.blk = wovor.blk  and  was.rec > wovor.rec
+;
+sp44::	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+;
+	call	konsent
+	jr	nz,sp42		; -> fehler: mb stand an falscher stelle
+;
+	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+;
+	inc	e		; wovor.rec := wovor.rec + 1
+	jr	sp41
+;
+;----------------
+;
+sp45::	jr	nc,sp46
+;
+; === was.blk < wovor.blk
+;
+	ld	a,d
+	sub	b
+	push	af
+	ld	a,(errcou)	; falls nur noch 5 Versuche ausstehen
+	cp	5		; um eine bandmarke mehr zuruecksetzen
+	jr	c,sp451
+	pop	af
+	inc	a
+	push	af
+sp451::	pop	af		; evtl. bei bedarf inc a
+	inc	a
+	ld	(ix+eabm),a	; (anzbm) := wovor - was + 1
+	ld	a,1
+	ld	(richtu),a
+	ld	a,75h		; um wovor-was+1 bm ruecksetzen
+	call	kmb
+	jr	nz,sp42		; -> fehler: beim bm-ruecksetzen
+;
+	ld	d,b
+	xor	a
+	ld	e,a		; wovor := was.blk / 0
+	jr	sp41
+;
+;----------------
+;
+sp46::	ld	a,d
+	inc	a
+	cp	b
+	jr	nz,sp48
+;
+; === was.blk = wovor.blk+1
+;
+sp47::	call	lesen
+	jr	nz,sp42		; -> fehler: beim lesen
+;
+	push	bc
+	ld	bc,0
+	call	konlen
+	pop	bc
+	jr	nz,sp47		; -> keine bandmarke, weitermachen
+;
+	inc	d
+	xor	a
+	ld	e,a		; wovor := wovor.blk+1 / 0
+	jp	sp41
+;
+;----------------
+;
+; === was.blk > wovor.blk+1
+;
+sp48::	ld	a,(errcou)	; falls nur noch 5 fehlversuche
+	cp	6		; langsam vorpositionieren
+	jr	c,sp47
+	ld	a,b
+	sub	d
+	ld	(ix+eabm),a	; (anzbm) := was - wovor
+	xor	a
+	ld	(richtu),a
+	ld	a,71h		; um was-wovor bm vorsetzen
+	call	kmb
+	jp	nz,sp42		; -> fehler: beim bm-vorsetzen
+;
+	ld	d,b
+	xor	a
+	ld	e,a		; wovor := was.blk / 0
+	jp	sp41
+;
+;----------------------------------------------------------------------
+;
+fehler::ld	a,16h		; fehlerbehandlung
+	cp	(ix+eafehl)	; ----------------
+	jr	nz,fehl01	; ende der aufzeichnungen auf dieser seite
+	ld	a,(richtu)
+	or	a
+	jr	z,fehl00
+	call	rucksp		; am anfang zur sicherheit ruckspulen
+	call	endruc
+	ld	a,41h		; reservieren aus
+	call	kmb
+	ld	a,31h		; reservieren ein
+	call	kmb
+	jr	fehl01
+fehl00::ld	b,16		; um 16 records zuruecksetzen
+fehl0a::ld	a,15h
+	call	kmb
+	djnz	fehl0a
+;
+fehl01::call	lesen
+	jr	nz,fehler
+	ld	bc,12
+	call	konlen		;   solange lesen bis sent gefunden
+	jr	nz,fehler	;   dann vor sent setzen und wovor
+;
+	push	iy
+	ld	l,(ix+eaadr)	; iy := (adr)
+	ld	h,(ix+eaadr+1)
+	ld	(arb),hl
+	ld	iy,(arb)
+	ld	d,(iy+1)
+	ld	e,(iy+2)
+	pop	iy
+	ld	(ix+eawovo),e
+	ld	(ix+eawovo+1),d
+;
+	ld	a,1
+	ld	(richtu),a
+	ld	a,15h
+	call	kmb		; einen record ruecksetzen
+	jr	nz,fehler	; -> fehler: beim record ruecksetzen
+	ret
+;
+;----------------------------------------------------------------------
+;
+kmb::	ld	(ix+eakom),a	; (kom) := a
+	push	bc
+	push	de
+	push	hl
+	xor	a
+	ld	(kmwart),a
+	call	kmbrob
+kmb01::	ld	a,(kmwart)
+	or	a
+	jr	z,kmb01
+	pop	hl
+	pop	de
+	pop	bc
+	bit	7,(ix+eastat)
+	ret
+;
+kmbep::	push	af
+	ld	a,1
+	ld	(kmwart),a
+	pop	af
+	ret
+;
+;----------------------------------------------------------------------
+;
+kmwart::defb	0		; 0 - kmb arbeitet noch; 1 - kmb fertig
+was::	defw	0
+errcou::defb	0		; zaehler fuer fehlversuche
+arb::	defw	0
+richtu::defb	0		; 0 - es wurde vorwaerts gelesen
+;				; 1 - es wurde rueckwaerts gelesen
+	page	66
+; user-unterprogramme zur Verbindung mit KMB-BAMOS
+; ------------------------------------------------
+
+; +++++++++++++++++++
+; 1. KMB-BAMOS-Aufruf
+; +++++++++++++++++++
+;
+; in	IX = Adresse der e/a-tabelle
+;       A  = kmb-kommando
+;
+; out   fuehrt das kmb-kommando aus und wartet auf die beendigung
+;	Status in der E/A-Tabelle
+;
+kmbuse::ld	(spret),sp
+	ld	sp,spber1
+	call	kmb
+	ld	sp,(spret)
+	ret
+
+; ++++++++++++++++++++++++++++++
+; 2. Warten auf Ende Rueckspulen
+; ++++++++++++++++++++++++++++++
+;
+; in	IX = Adresse der e/a-tabelle
+;
+; out	wartet dann auf das ende des rueckspulens
+;
+enduse::ld	(spret),sp
+	ld	sp,spber1
+	call	endruc
+	ld	sp,(spret)
+	ret
+
+; ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; 3. Uebernahme der Kassettenpuffers in den Nutzerpuffer
+; ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+;
+; in	IX = Adresse der e/a-tabelle
+;       DE = Adresse des Zielbereiches, in den aus dem Kassetten-
+;            puffer der e/a-tabelle uebertragen werden soll
+;
+; out	uebertraegt dann aus dem kmb-puffer in den nutzerpuffer
+;
+getpuf::ld	(spret),sp
+	ld	sp,spber1
+	ld	l,(ix+eaadr)
+	ld	h,(ix+eaadr+1)
+	ld	b,(ix+ealen)
+	ld	c,(ix+ealen+1)
+getpu1::ld	a,b
+	or	c
+	jr	z,getpu2
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	dec	bc
+	jr	getpu1
+;
+getpu2::ld	sp,(spret)
+	ret
+	page	66
+; Hardware Beschreibungstabellen
+; ------------------------------
+; Kassette 1 - 6 geblockt
+;
+dphc1::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc1
+	defw	allc1
+dphc2::	defw	0,0		; keine sektorumrechnung
+	defw	0,0
+	defw	dirbf
+	defw	dpblkc
+	defw	chkc2
+	defw	allc2
+dpblkc::defw	16		; sektoren pro spur
+	defb	3,7,0		; 1k blockung
+	defw	166-1		; 166k kapazitaet
+	defw	63		; 64 dir. entries
+	defb	0c0h,0		; 2 belegte bloecke durch dir.
+	defw	16		; 16 dir.entries pruefen
+	defw	0		; 0 spuren durch system belegt
+	page	66
+; E/A-Tabellen Kassetten
+; ----------------------
+;
+; Aufbau des geraetespezifischen Teiles der E/A-Tabelle
+;
+eastat	equ	0	; BAMOS-Arbeitszellen KMB
+eafehl	equ	1	; Fehlerkennzeichen
+eakom	equ	4	; Kommando
+eaep	equ	5	; Adresse der Fertigroutine
+eaadr	equ	7	; Transferadresse
+ealen	equ	9	; Transferlaenge
+eabm	equ	10	; Anzahl der Blockmarken
+eawied	equ	11	; Anzahl der Fehlerwiederholungen
+eaverl	equ	12	; Anzahl der Blocklueckenverlaengerungen
+;
+eadpuf	equ	13	; Directorypufferung Kassetten
+eadzei	equ	15	; Anzeiger, ob Kassettenverzeichnis veraendert wurde
+eawovo	equ	16	; Positionierung Kassetten
+gelade	equ	18	; Anzeiger, ob die Kassette geladen ist
+kmexis	equ	19	; Anzeiger, ob AKB existiert (1=existiert)
+
+	defw	pcbc1		; Adresse des Pufferkontrollblockes Kass.1
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab1::defb	0,0,pkmb1,1	; Laufwerk 1
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir1
+	defb	0		; Anzeiger, ob in directory geschrieben (1=ja)
+	defw	0		; wovor blk/rec
+	defb	0		; Anzeiger, ob die Kassette geladen ist (1=ja)
+	defb	0		; Anzeiger, ob AKB existiert
+
+pcbc1::	defw	kasbu1		; Adresse des hostbuffer
+	defb	'N'-'A'		; Nr. der dev, welche den Puffer gerade belegt
+	defw	0		; Nr. des Pufferinhaltes als hostwert
+	defb	0		;               - " -
+	defb	0		; Puffer gefuellt (=0 nein)
+	defb	0		; Puffer beschrieben (=1 es wurde)
+	defb	0		; Anzahl der noch unalloc. recs
+	defw	0		; Spurnr. des naechsten unalloc. recs
+	defb	0		; Sektornr.     - " -
+;
+	defw	pcbc2		; Adresse des Pufferkontrollblockes Kass.2
+	defw	hrdkmb		; leseroutine vom kmb in hostbuffer
+	defw	hwrkmb		; writeroutine vom hostbuffer auf kmb
+	defb	8,16,1,1	; parameter blockung/entblockung
+	defb	1		; Geraet arbeitet geblockt
+	defw	rdkmb,wrkmb
+eatab2::defb	0,0,pkmb1,2	; Laufwerk 2
+	defb	0		; ==========
+	defw	kmbep,0
+	defw	0,0
+	defw	dir2
+	defb	0
+	defw	0
+	defb	0,0
+
+pcbc2::	defw	kasbu2		; Adresse des hostbuffer
+	defb	'O'-'A'
+	defs	9,0
+
+; Arbeitsbereiche
+; ---------------
+;
+rderr::	defb	0		; Fehlerzaehler
+kmbpuf::defs	100h,0
+allc1::	defs	21,0
+chkc1::	defs	16,0
+allc2::	defs	21,0
+chkc2::	defs	16,0
+dir1::	defs	800h,0
+dir2::	defs	800h,0
+kasbu1::defs	100h,0
+kasbu2::defs	100h,0
+;
+	page
+	TITLE	'KMBG-KOMMENTARTEIL'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:      01.01.81       OS-VERSION: V1.2/19.7.84    **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG: wenhold            **
+;************************************************************
+;** GERAETEBEDIENROUTINE FUER KASSETTENMAGNETBAND          **
+;** ANSCHLUSS VON ZWEI LAUFWERKEN K5200 AN EINER AKB K5020 **
+;************************************************************
+;************************************************************
+;PROGRAMME DIE ZUR GERAETEBEDIENROUTINE GEHOEREN:
+;   KK  KOMMENTARTEIL MIT GENERIERPARAMETERN
+;   KP  INITIALISIEREN DER AKB
+;   KS  STEUERTEIL DER BEDIENROUTINE
+;   KI  INTERRUPTSERVICEROUTINEN
+;   KU  UNTERPROGRAMME
+;   KC  CTC-ROUTINE ZUR ZEITSTEUERUNG
+;   KF  FEHLERBEHANDLUNG
+;   KA  ARBEITSSPEICHER (RAM)
+;   KT  TABELLE DER ADRESSEN DER ISR AKB
+;   KV  TABELLE DER ADRESSEN DER ISR CTC
+;*********************************************************************
+;E/A-TABELLE
+;BYTE 0    STATUS
+;BYTE 1    FEHLERSCHLUESSEL
+;BYTE 2    BASISADRESSE DER AKB
+;BYTE 3    SUBADRESSE
+;BYTE 4    KOMMANDO
+;BYTE 5    L-TEIL ADRESSE EINTRITTSPUNKT
+;BYTE 6    H-TEIL ADRESSE EINTRITTSPUNKT
+;BYTE 7    L-TEIL BLOCKADRESSE
+;BYTE 8    H-TEIL BLOCKADRESSE
+;BYTE 9    H-TEIL BLOCKLAENGE (BIT 15,...,BIT 8)
+;BYTE 10   L-TEIL BLOCKLAENGE (BIT 7,...,BIT 0), N BEI SUCHEN BANDMARKE
+;BYTE 11   ANZAHL LESE-/SCHREIB WIEDERHOLEN
+;BYTE 12   ANZAHL BLOCKLUECKENVERLAENGERUNGEN
+;*********************************************************************
+;STATUS
+;BIT 0     0 GERAET FREI
+;          1 GERAET BESETZT
+;BIT 1     0
+;          1 DATENTRAEGERENDE
+;BIT 2     0 AUFZEICHNEN ERLAUBT
+;          1 AUFZEICHNEN VERBOTEN
+;BIT 3     0 KASSETTENSEITE A
+;          1 KASSETTENSEITE B
+;BIT 4     0 GERAET BEREIT
+;          1 GERAET NICHT BEREIT
+;BIT 5     0 GERAET NICHT RESERVIERT
+;          1 GERAET RESERVIERT
+;BIT 6     0 AUFZEICHNUNGSVERFAHREN  38 CM*S**-1
+;          1 AUFZEICHNUNGSVERFAHREN  19 CM*S**-1
+;BIT 7     0 KOMMANDO FEHLERFREI AUSGEFUEHRT
+;          1 FEHLER (SIEHE FEHLERSCHLUESSEL)
+;*********************************************************************
+;KOMMANDO (BIT 7=1 --> OHNE FEHLERWIEDERHOLUNG)
+;  HEX   KOMMANDO
+;  00    AUFZEICHNEN MIT RAW (2=<BLOCKLAENGE=<256)
+;  08    AUFZEICHNEN OHNE RAW
+;  02    WIEDERGABE (ES WIRD DER NAECHSTE BLOCK
+;        GELESEN, ADRESSE UND LAENGE WERDEN IN DER
+;        E/A-TABELLE UEBERMITTELT
+;  11    EIN BLOCK VORSETZEN
+;  15    EIN BLOCK RUECKSETZEN
+;  21    UMSPULEN
+;  31    RESERVIEREN EIN
+;  41    RESERVIEREN AUS
+;  51    SCHREIBEN EINER BANDMARKE (STEUERBLOCK)
+;  61    SCHREIBE SCHLUSSLUECKE
+;  71    SUCHE N-TE BANDMARKE VORWAERTS
+;  75    SUCHE N-TE BANDMARKE RUECKWAERTS
+;*********************************************************************
+;FEHLERSCHLUESSEL
+;   HEX
+;   10        FALSCHES KOMMANDO
+;   11        ANGEWAEHLTES GERAET NICHT RESERVIERT
+;   12        SUBADRESSE FALSCH
+;   13        PUFFERLAENGE KLEINER 12 ODER GROESSER 256
+;   14        ENDE DER AUFZEICHNUNGEN AUF DIESER KASSETTENSEITE (LESEN)
+;   15        ANGEWAEHLTES GERAET BESETZT
+;   16        ENDE/ANFANG DER AUFZEICHNUNGEN (BANDMARKE SUCHEN)
+;   17        GELESENER BLOCK LAENGER 260 BYTE
+;   18        BANDMARKE NICHT GEFUNDEN
+;   19        AUFZEICHNEN VERBOTEN(MIT KOMMANDO:AUFZEICHNEN)
+;   21        FEHLER NACH FESTGELEGTER ANZAHL LESEWIEDERHOLUNGEN
+;   22        FEHLER NACH FESTGELEGTER ANZAHL SCHREIBWIEDERHOLUNGEN
+;   23        KEIN ECHOSIGNAL VOM EINGABEKANAL BEI RAW
+;*********************************************************************
+;HINWEISE ZUR ARBEIT MIT DER GERAETEBEDIENROUTINE
+;  * IM2 EINSTELLEN,SP UND I-REGISTER LADEN
+;  * E/A-TABELLE LADEN(BASISADRESSE AKB),ADRESSE E/A-TAB. IN IX LADEN
+;  * PROGRAMMIEREN AKB DURCH AUFRUF DES UP'S KP.INIT (CALL KP.INIT)
+;  * LADEN SCHLUESSEL FUER KOMMANDO,SUBADRESSE,ADRESSE EINTRITTSPUNKT
+;  * AUFRUF GERAETEBEDIENROUTINE IMMER MIT CALL KS.BRK
+;  * WIRD KEINE PARALLELARBEIT MIT ANDEREN PROGRAMMEN GEWUENSCHT,KANN
+;    WIE IN FOLGENDEM BEISPIEL VERFAHREN WERDEN:
+;         .
+;         .
+;         .
+;         CALL KS.BRK	;AUFRUF
+;   MARKE:HALT
+;         JR   MARKE-#
+;   ADREP:............  ;ADRESSE EINTRITTSPUNKT
+;         .
+;         .
+;         .
+;  * BEI RUECKKEHR DER BEDIENROUTINE ZUM EINTRITTSPUNKT IST DIE ADRESSE
+;    DES FOLGENDEN BEFEHLS, BEI DEM DER LETZTE INTERRUPT ANGENOMMEN
+;    WURDE, NOCH IM SP. WIRD, WIE IM OBIGEN BEISPIEL, DIESE ADRESSE
+;    NICHT MEHR BENOETIGT, SO IST DER SP UM 2 ZU ERHOEHEN.
+	page
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:      01.01.81       OS-VERSION:  V1.2/19.7.84   **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG:TOCHATSCHEK/wenhold **
+;************************************************************
+;** TABELLE DER ADRESSEN DER ISR CTC                       **
+;************************************************************
+;************************************************************
+;FUER DEN CTC AUF DER ZRE-PLATTE SIND HIER
+;DIE ADRESSEN DER INTERRUPTSERVICEROUTINEN FUER DIE
+;EINZELNEN KANAELE (0,1,2,3) EINZUTRAGEN
+;L-TEIL VON ICTC0:XXXXX000
+
+kv.iv	equ	ivctc		;interruptvektoadr.niederwert. byte
+
+KV.IC0	equ	kv.iv		;INT. BEH. CTC KANAL 0
+KV.IC1	equ	kv.iv+2		;INT. BEH. CTC KANAL 1
+KV.IC2	equ	kv.iv+4		;INT. BEH. CTC KANAL 2
+KV.IC3	equ	kv.iv+6		;INT. BEH. CTC KANAL 3
+	page
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:      01.01.81       OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT    aenderung: wenhold 16.11.85 **
+;************************************************************
+;** ADRESSENVERBINDUNGSTABELLE ZU ISR                      **
+;************************************************************
+;************************************************************
+;
+kt.iva		equ	ivpio		;interruptvek. niederwert. byte
+
+KT.IAU		equ	kt.iva		;INT. BEH AUSGABEKANAL
+KT.IER		equ	kt.iva+2	;INT. BEH. EINGABEKANAL RAW
+KT.IEL		equ	kt.iva+4	;INT. BEH. EINGABEKANAL LESEN
+KT.IST		equ	kt.iva+6	;INT. BEH. STATUS
+KT.IBE		equ	kt.iva+8	;INT. BEH. BANDENDE
+KT.IBL		equ	kt.iva+10	;BEHANDLUNG BLINDINTERRUPT
+	page
+	TITLE	'KMBG-ARBEITSBEREICH'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:      01.01.81       OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT    aenderung: wenhold 19.2.85  **
+;************************************************************
+;** ARBEITSBEREICH ZUR GERAETEBEDIENROUTINE KMBG           **
+;************************************************************
+
+KA.AEATB::	DW	0		;ADRESSE E/A-TABELLE
+KA.PZAUS::	DW	0		;PUFFERZEIGER AUSGABE
+KA.PZEIN::	DW	0		;PUFFERZEIGER EINGABE
+KA.ZAUS::	DW	0		;ZAEHLER AUSGABE
+KA.ZIN::	DW	0		;ZAEHLER EINGABE
+KA.Z1::		DB	0		;ZAEHLER SCHREIB-/LESE WDHG.
+KA.Z2::		DB	0		;ZAEHLER BLOCKLUECKENVERL.
+KA.CRCZ::	DW	0		;CRC-ZEICHEN
+KA.FEHLZ::	DB	0		;INTERNER FEHLERANZEIGER
+
+;***************************************************************
+; BEDEUTUNG DES INTERNEN FEHLERANZEIGERS
+;  BIT     FEHLER
+;------------------------------------------------------------
+;    0     KEIN ECHOSIGNAL VOM EINGABEKANAL BEI RAW
+;    1     LETZTER INTERRUPT NICHT GEKOMMEN BEI RAW
+;    2     STATUS WAEHREND DER DATENUEBERTRAGUNG
+;    3     CRC-ZEICHEN FEHLERHAFT BEIM LESEN
+;    4     RAW-FEHLER
+;-----------------------------------------------------------
+;***************************************************************
+
+KA.POS::	DW	0		;POSITION DES FEHLERS IM DATENSATZ
+KA.SDAT::	DB	0		;SOLLDATEN
+KA.IDAT::	DB	0		;ISTDATEN
+KA.PUFFS::	DS	260,0ffh		;PUFFERSPEICHER
+
+;ARBEITSZELLEN FUER CRC-ROUTINE
+KA.KOMDO::	DB	0		;KOMMANDO
+KA.ZEITK::	DB	0		;ZEITKONSTANTE
+KA.ADR::	DW	0		;ADRESSE
+KA.CONTR::	DB	0		;EREIGNISKONTROLLE
+	page
+	TITLE	'KMBG-STEUERTEIL'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:  01.03.83/19.07.84  OS-VERSION:   V1.3          **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG:TOCHATSCHEK/wenhold **
+;**                                                19.2.85 **
+;************************************************************
+;** STEUERTEIL DER GERAETEBEDIENROUTINE                    **
+;** FUER KASSETTENMAGNETBAND                               **
+;************************************************************
+;************************************************************
+
+;-----------------------------------------------------------0010
+KS.BRK:	DI
+	PUSH	IX		;REG.RETTEN
+	CALL	KU.RRET
+	LD	(KA.AEATB),IX	;ADR.E/A-TAB
+;-----------------------------------------------------------0020
+	BIT	0,(IX)
+	JP	NZ,STF06	;FEHLER,GERAET NICHT FREI
+;-----------------------------------------------------------0030
+	RES	7,(IX)		;FEHLERBIT
+	LD	(IX+1),0	;FEHLERSCHLUESSEL
+;-----------------------------------------------------------0040
+STT00:	SET	0,(IX)		;BESETZTBIT
+	EI
+;-----------------------------------------------------------0050
+	LD	A,(IX+3)	;SUBADR.PRUEFEN
+	DEC	A
+	JR	Z,STT01
+	DEC	A
+	JP	NZ,STF01	;SUBADRESSE FALSCH
+;-----------------------------------------------------------0060
+STT01:	LD	A,(IX+2)	;BASISADRESSE
+	ADD	A,4
+	LD	C,A		;REL.ADR.4
+	LD	A,(IX+4)	;KOMMANDO RESERVIEREN EIN ?
+	CP	31H
+	JP	Z,STT30		;SPRUNG NACH RESERVIEREN EIN
+;-----------------------------------------------------------0070
+	CP	41H		;KOMMANDO RESERVIEREN AUS ?
+	JP	Z,STT40		;SPRUNG NACH RESERVIEREN AUS
+;-----------------------------------------------------------0080
+;PRUFEN OB ADRESSIERTES GERAET RESERVIERT UND ANWAHL EINSCHALTEN
+	IN	A,(C)
+	AND	3		;RUECKSETZEN
+	INC	C		;REL.ADR.5
+	IN	B,(C)
+	BIT	0,(IX+3)
+	JR	Z,STT02		;SPRUNG WENN LW2
+	BIT	1,A
+	JP	NZ,STF02	;GERAET NICHT RESERVIERT
+	BIT	4,B
+	JP	Z,STF03		;GERAET NICHT BEREIT
+	SET	3,A		;ANWAHL GERAET 1
+	JR	STT03
+STT02:	BIT	0,A
+	JP	NZ,STF02	;GERAET NICHT RESERVIERT
+	BIT	3,B
+	JP	Z,STF03		;GERAET NICHT BEREIT
+	SET	2,A		;ANWAHL GERAET 2
+STT03:	DEC	C		;REL.ADR.4
+	OUT	(C),A		;EINSCHALTEN ANWAHL
+;-----------------------------------------------------------0090
+;ANALYSE KOMMANDO
+	LD	A,(IX+4)	;KOMMANDO
+	AND	077H		;BIT 7,3 AUSBLENDEN
+	JR	Z,STT10		;SPRUNG ZUM AUFZEICHNUNGSZWEIG
+;-----------------------------------------------------------0100
+	CP	02H
+	JP	Z,STT20		;SPRUNG ZUM EINGABEZWEIG
+;-----------------------------------------------------------0110
+	AND	0F0H
+	CP	10H
+	JP	Z,STT60		;BLOCK VOR-/RUECKSETZEN
+;-----------------------------------------------------------0120
+	CP	20H
+	JP	Z,STT50		;UMSPULEN
+;-----------------------------------------------------------0130
+	CP	50H
+	JP	Z,STT70		;SCHREIBEN EINER BANDMARKE
+;-----------------------------------------------------------0140
+	CP	60H
+	JP	Z,STT80		;SCHREIBEN EINER SCHLUSSLUECKE
+;-----------------------------------------------------------0150
+	CP	70H
+	JP	Z,STT90		;SUCHE BANDMARKE
+;-----------------------------------------------------------0160
+	JP	STF07		;FEHLER: KEIN GUELTIGES KOMMANDO
+;-----------------------------------------------------------0170
+;AUFZEICHNUNGSZWEIG
+STT10:	BIT	2,(IX)		;AUFZEICHNEN ERLAUBT ?
+	JP	NZ,STF0B	;SPRUNG WENN AUFZEICHNEN VERBOTEN
+;-----------------------------------------------------------0180
+	BIT	1,(IX)
+	JR	NZ,STT06
+;-----------------------------------------------------------0190
+	IN	D,(C)
+	BIT	7,D		;SIGNAL AEB
+	CALL	Z,KU.MBAN	;MB EINZIEHEN BEIM SCHREIBEN
+;-----------------------------------------------------------0200
+;PRUEFEN BLOCKLAENGE
+STT06:	LD	B,(IX+9)
+	LD	C,(IX+10)	;<BC>=BLOCKLAENGE
+	LD	A,C
+	OR	A
+	LD	C,1
+	JR	Z,STT11		;L-TEIL = 0
+	DEC	C
+	CP	12
+	JR	C,STFBL		;L-TEIL < 12
+STT11:	LD	A,B		;H-TEIL
+	CP	C
+STFBL:	JP	NZ,STF04	;BLOCKLAENGE NICHT 12,...,256
+;-----------------------------------------------------------0210
+;PUFFERSPEICHER LADEN
+STT12:	LD	HL,KA.PUFFS	;ADR. PUFFERSP.
+	LD	M,0AAH		;PRAEAMBEL
+	INC	HL
+	PUSH	HL
+	EX	DE,HL
+	LD	L,(IX+7)
+	LD	H,(IX+8)	;ADRESSE BLOCK
+	LD	B,(IX+9)
+	LD	C,(IX+10)
+	LD	A,C
+	LDIR
+	LD	HL,0
+	LD	(KA.CRCZ),HL
+	POP	HL
+	PUSH	DE
+	LD	B,A
+	CALL	KU.CRC		;BERECHNE CRC-ZEICHEN
+	POP	HL
+	LD	M,D		;1.BYTE CRC
+	INC	HL
+	LD	M,E		;2.BYTE CRC
+	INC	HL
+	LD	M,0AAH		;POSTAMBEL
+;-----------------------------------------------------------0220
+;ARBEITSBEREICH LADEN
+	XOR	A
+	LD	(KA.Z1),A
+	LD	(KA.Z2),A
+;-----------------------------------------------------------0230
+KS.SEP:	LD	A,3		;EINSPRUNG BEI WIEDERHOLUNG
+	LD	(KA.FEHLZ),A
+	LD	HL,KA.PUFFS
+	LD	(KA.PZAUS),HL
+	LD	(KA.PZEIN),HL
+	LD	H,(IX+9)
+	LD	L,(IX+10)
+	LD	DE,4
+	ADD	HL,DE
+	LD	(KA.ZIN),HL
+	LD	(KA.ZAUS),HL
+;-----------------------------------------------------------0240
+STT16:	LD	A,(IX+2)
+	ADD	A,4
+	LD	C,A		;REL.ADR.4
+	CALL	KU.RSI		;RUECKSETZEN INTERN
+	INC	C		;REL. ADR. 5
+	LD	A,2
+	OUT	(C),A		;AUF=1
+;-----------------------------------------------------------0250
+	INC	C		;REL.ADR.6
+	CALL	KU.AEBEI	;SIGNAL AEB AUF INTERRUPT
+;-----------------------------------------------------------0260
+	DEC	C
+	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	BIT	3,(IX+4)
+	JR	Z,STT17		;SPRUNG FALLS MIT RAW
+	SET	6,A		;HGE=1
+	LD	HL,KA.FEHLZ
+	RES	0,M
+;-----------------------------------------------------------0270
+STT17:	SET	4,A		;TRV=1
+	OUT	(C),A		;EINSCHALTEN TRANSPORT VORWAERTS
+;-----------------------------------------------------------0280
+;AUFRUF CTC-ROUTINE
+	LD	B,4		;ENTSPRICHT 40MS
+	CALL	KU.AUFZV
+	JR	NC,sttl1
+	LD	B,7		;ENTSPRICHT 70 MS
+sttl1:	LD	C,0
+	LD	HL,STT14
+	CALL	KC.INIT		;ZEITSTEUERUNG
+;-----------------------------------------------------------0290
+KS.S13:CALL	KU.RLAD
+	POP	IX
+	EI
+	RET
+;-----------------------------------------------------------0300
+STT14:	DI			;EINSPRUNG NACH ABLAUF ZEITVORGABE
+	PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+;-----------------------------------------------------------0310
+	LD	A,(IX+2)
+	ADD	A,3
+	ld	c,h
+	LD	hl,KT.IER
+	ld	h,c
+	LD	C,A		;REL.ADR.3
+	BIT	3,(IX+4)
+	CALL	Z,KU.EINIE	;INT.EINGABEKANAL EINSCHALTEN,RAW
+;-----------------------------------------------------------0320
+STT15:	DEC	C		;REL.ADR.2
+	LD	A,83H
+	OUT	(C),A		;INT.FREIGABE AUSGABEKANAL
+;-----------------------------------------------------------0330
+	DEC	C
+	DEC	C		;REL.ADR.0
+	LD	A,0AAH
+	OUT	(C),A		;AUSGABE PRAEAMBEL
+;-----------------------------------------------------------0340
+	CALL	KU.STAE		;STATUS AUF INT.
+	JR	KS.S13
+;-----------------------------------------------------------0350
+;EINGABEZWEIG
+STT20:	BIT	1,(IX)		;DATENTRAEGERENDE
+	JR	NZ,STT21
+;-----------------------------------------------------------0360
+	IN	A,(C)
+	BIT	7,A
+	CALL	Z,KU.MBAN	;MB EINZIEHEN BEIM LESEN
+;-----------------------------------------------------------0370
+STT21:	XOR	A
+	LD	(KA.Z1),A
+;-----------------------------------------------------------0380
+KS.S22:	LD	DE,0		;EINSPRUNG
+	LD	(KA.ZIN),DE	;ZEIN=0
+	LD	HL,KA.PUFFS
+	LD	(KA.PZEIN),HL	;ZEIGER AUF PUFFERANFANG
+	XOR	A
+	LD	(KA.FEHLZ),A
+;-----------------------------------------------------------0390
+	CALL	KU.RSI		;RUECKSETZEN INTERN AKB
+	ld	a,h
+	LD	hl,KT.IEL	;L-TEIL INT.-VEKTOR LESEN
+	ld	h,a
+	DEC	C		;REL. ADR.3
+	CALL	KU.EINIE	;INT.EINGABEKANAL EINSCH. AUF LESEN
+;-----------------------------------------------------------0400
+	LD	A,(IX+2)
+	ADD	A,6
+	LD	C,A		;REL.ADR.6
+	CALL	KU.AEBEI	;AEB AUF INT.
+;-----------------------------------------------------------0410
+	DEC	C
+	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	SET	4,A
+	OUT	(C),A		;TRV=1
+;-----------------------------------------------------------0420
+	EI
+	XOR	A
+	LD	(KA.CONTR),A
+	LD	B,68
+	CALL	KU.AUFZV
+	JR	NC,ksl1
+	LD	B,134
+ksl1:	LD	C,1		;KONTROLLE EREIGNIS
+	LD	HL,STF05
+	CALL	KC.INIT		;ZEITKONTROLLE
+	JP	KS.S13
+;-----------------------------------------------------------0430
+;RESERVIEREN EIN
+STT30:	IN	A,(C)		;TOR A
+	AND	3
+	BIT	0,(IX+3)
+	JR	Z,STT31
+	RES	1,A		;GERAET 1
+	LD	D,10H
+	JR	STT32
+STT31:	RES	0,A		;GERAET 2
+	LD	D,08H
+STT32:	OUT	(C),A		;RESERVIERUNG EIN
+	INC	C		;REL.ADR.5
+	LD	E,2
+;-----------------------------------------------------------0440
+STT33:	LD	A,150
+	CALL	KU.WART
+	DEC	E
+	JR	NZ,STT33
+;-----------------------------------------------------------0450
+	IN	A,(C)
+	AND	D
+	JR	NZ,STT34
+;-----------------------------------------------------------0460
+STT37:	LD	(IX),10H	;GERAET NICHT BEREIT
+	JP	KU.KOMED
+;-----------------------------------------------------------0470
+;ANWAHL EIN,ZUSTAENDE ABFRAGEN
+STT34:	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	BIT	0,(IX+3)	;SUBADRESSE
+	JR	Z,STT35
+	SET	3,A		;ANWAHL GERAET 1
+	JR	sttl2
+STT35:	SET	2,A		;ANWAHL GERAET 2
+sttl2:	OUT	(C),A
+	INC	C		;REL.ADR.5
+	LD	A,2
+	NOP			;ED 79  OUT  A;AUFZEICHNEN EIN
+	NOP
+	IN	A,(C)
+	BIT	0,A		;AUFZEICHNUNGSVERFAHREN
+	JR	Z,sttl3
+	SET	6,(IX)
+sttl3:	BIT	2,A		;KASSETTENSEITE
+	JR	Z,sttl4
+	SET	3,(IX)
+sttl4:	IN	A,(C)
+	BIT	6,A		;AUFZEICHNEN VERBOTEN ?
+	JR	Z,sttl5
+	NOP			;DD CB 00 D6  SET  2,(IX)
+	NOP
+	NOP
+	NOP
+sttl5:	XOR	A
+	OUT	(C),A		;AUF=0
+	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	AND	3
+	OUT	(C),A		;ANWAHL RUECKSETZEN
+	INC	C		;REL. ADR. 5
+	IN	A,(C)
+	AND	D
+	JR	Z,STT37
+	RES	4,(IX)		;NICHTBEREIT RUECKSETZEN
+	SET	5,(IX)		;GERAET RESERVIERT
+;-----------------------------------------------------------0480
+	JP	KU.KOMED
+;-----------------------------------------------------------0490
+;RESERVIEREN RUECKSETZEN
+STT40:	IN	A,(C)
+	BIT	0,(IX+3)	;SUBADRESSE
+	JR	Z,STT41
+	SET	1,A
+	JR	STT42
+STT41:	SET	0,A
+STT42:	AND	3
+	OUT	(C),A		;RES.RUECKSETZEN
+	LD	(IX),10H	;STATUS NICHT BEREIT
+;-----------------------------------------------------------0500
+	JP	KU.KOMED
+;-----------------------------------------------------------0510
+;UMSPULEN
+STT50:	IN	D,(C)		;EINGABE VON REL. ADR. 4
+	BIT	7,D
+	JR	NZ,STT52
+;-----------------------------------------------------------0520
+	SET	5,D
+	OUT	(C),D		;TRR=1
+;-----------------------------------------------------------0521
+	LD	HL,0
+STT51:	DEC	HL
+	LD	A,H
+	OR	L
+	JR	Z,STT54
+;-----------------------------------------------------------0523
+	IN	D,(C)
+	BIT	7,D
+	JR	Z,STT51		;SPRUNG WENN AEB=0
+;-----------------------------------------------------------0530
+STT52:	RES	5,D
+	OUT	(C),D		;TRR=0
+	LD	A,40
+	CALL	KU.WART
+	LD	A,D
+	OR	30H		;TRR=TRV=1
+	OUT	(C),A
+	LD	A,20
+	CALL	KU.WART
+STT53:	CALL	KU.BER		;BEREITSIGNAL ABFRAGEN
+	JR	NC,STT53	;SPRUNG SOLANGE GERAET BEREIIT
+;-----------------------------------------------------------0550
+STT54:	IN	A,(C)
+	AND	3
+	OUT	(C),A		;TRANSPORT UND ANWAHL AUS
+	LD	A,40
+	CALL	KU.WART
+;-----------------------------------------------------------0560
+	RES	1,(IX)		;DATENTRAEGERENDE RUECKSETZEN
+;-----------------------------------------------------------0570
+	JP	KU.KOMED
+;-----------------------------------------------------------0580
+;VOR-/RUECKSETZEN UM EINEN BLOCK
+STT60:	LD	B,10H		;VORWAERTS
+	BIT	2,(IX+4)	;VORWAERTS/RUECKWAERTS?
+	JR	Z,ksl2
+	LD	B,20H		;RUECKWAERTS
+ksl2:	CALL	KU.VR
+;-----------------------------------------------------------0590
+	JP	KU.KOMED
+;-----------------------------------------------------------0600
+;SCHREIBEN EINER BANDMARKE
+STT70:	BIT	1,(IX)		;DATENTRAEGERENDE?
+	JR	NZ,STT71
+;-----------------------------------------------------------0610
+	IN	D,(C)
+	BIT	7,D
+	CALL	Z,KU.MBAN	;MB EINZIEHEN BEIM SCHREIBEN
+;-----------------------------------------------------------0620
+STT71:	XOR	A
+	LD	(KA.Z1),A
+	LD	(KA.Z2),A
+;-----------------------------------------------------------0630
+KS.S72:	LD	A,3		;EINSPRUNG
+	LD	(KA.FEHLZ),A	;FEHLERANZEIGER
+	LD	DE,4
+	LD	(KA.ZIN),DE	;ZAEHLER EINGABE
+	LD	(KA.ZAUS),DE	;ZAEHLER AUSGABE
+	LD	HL,KA.PUFFS	;ADRESSE PUFFERSPEICHER
+	LD	(KA.PZAUS),HL
+	LD	(KA.PZEIN),HL
+;-----------------------------------------------------------0640
+	LD	M,0AAH		;LADEN PUFFERSPEICHER
+	INC	HL
+	LD	M,0
+	INC	HL
+	LD	M,0
+	INC	HL
+	LD	M,0AAH
+;-----------------------------------------------------------0650
+	JP	STT16
+;-----------------------------------------------------------0660
+;SCHREIBEN EINER SCHLUSSLUECKE (> 400 MM>
+STT80:	LD	B,108
+	CALL	KU.MBVZ		;MB 400 MM LOESCHEN
+;-----------------------------------------------------------0670
+	DEC	C
+	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	AND	3
+	OUT	(C),A		;ANWAHL AUS
+;-----------------------------------------------------------0680
+	JP	KU.KOMED
+;-----------------------------------------------------------0690
+;SUCHE BANDMARKE
+;<C>=REL.ADR.4
+;<IX>=ADRESSE E/A-TABELLE
+STT90:	LD	A,(IX+10)	;ANZAHL BANDMARKEN,DIE ZU UEBERLESEN SIND
+	LD	(KA.Z1),A
+	BIT	2,(IX+4)
+	JR	NZ,STT98	;SPRUNG WENN SUCHEN RUECKWAERTS
+;-----------------------------------------------------------0700
+	BIT	1,(IX)		;DATENTRAEGERENDE ?
+	JR	NZ,STT98
+;-----------------------------------------------------------0710
+	IN	D,(C)
+	BIT	7,D		;AEB ?
+	CALL	Z,KU.MBAN	;MB EINZIEHEN
+;-----------------------------------------------------------0720
+STT98:	DI
+	INC	C
+	INC	C		;REL ADR. 6
+	CALL	KU.AEBEI
+;-----------------------------------------------------------0730
+	EI
+	DEC	C
+	DEC	C		;REL. ADR. 4
+	CALL	STT9E		;TRANSPORT EINSCHALTEN
+	SET	6,A
+	OUT	(C),A		;HGE=1
+;-----------------------------------------------------------0740
+	LD	A,50
+	CALL	KU.WART
+	INC	C		;REL.ADR.5
+	JR	STT9B
+;-----------------------------------------------------------0750
+STT93:	LD	DE,7100
+;IN FOLGENDER SCHLEIFE WIRD BMS 170 MILLISEK. AUF 1 GETESTET
+STT91:	EI
+	DEC	DE
+	LD	A,D
+	OR	E
+	JP	Z,STT9F		;SPRUNG WENN AUFZEICHNUNGSENDE
+	IN	B,(C)
+	BIT	5,B
+	JR	Z,STT91
+;-----------------------------------------------------------0760
+; EINGANG BMS=1
+;INTEGRATION DES SIGNALS BMS UEBER CA. 1 MS
+	DI
+	LD	D,0
+	LD	B,73		;INTEGRATION UEBER CA. 1,6 MS
+STT99:	IN	A,(C)
+	BIT	5,A
+	JR	Z,STT92
+	INC	D
+	JR	STT92+2
+STT92:	IN	A,(C)
+	DJNZ	STT99
+;-----------------------------------------------------------0770
+;PRUEFEN OB NACH BANDMARKE EINE BLOCKLUECKE (MIND. 2 MM)
+	LD	B,255		;PRUEFEN CA. 10 MM
+STT9W:	IN	A,(C)
+	BIT	5,A
+;-----------------------------------------------------------0771
+	JR	NZ,STT9B
+	DJNZ	STT9W
+;-----------------------------------------------------------0780
+	LD	A,D
+	CP	15
+	JR	NC,STT94	;SPRUNG WENN A >=15
+	JR	STT93
+;-----------------------------------------------------------0790
+STT9B:	LD	B,0FFH		;NAECHSTE BLOCKLUECKE SUCHEN
+	IN	A,(C)
+	BIT	5,A
+	JR	NZ,STT9B
+	DJNZ	STT9B+2
+	JR	STT93
+;-----------------------------------------------------------0800
+;BANDMARKE ERKANNT
+STT94:	LD	HL,KA.Z1
+	DEC	M		;ZAEHLER FUER BANDMARKEN
+;-----------------------------------------------------------0801
+	JR	NZ,STT93
+;-----------------------------------------------------------0810
+	DEC	C		;REL. ADR. 4
+	IN	A,(C)
+	AND	4FH
+	OUT	(C),A		;TRANSPORT AUS
+;-----------------------------------------------------------0820
+	LD	B,50		;WARTEN 500 MS
+	LD	C,0
+	LD	HL,STT97
+	CALL	KC.INIT		;NACH 250 MS STOP
+STT9C:	HALT
+	JR	STT9C
+STT97:	INC	SP
+	INC	SP
+;-----------------------------------------------------------0830
+	LD	B,100
+	LD	C,0
+	LD	HL,STF08
+	CALL	KC.INIT		;TIME OUT WENN BANDMARKE NICHT GEFUNDEN
+;-----------------------------------------------------------0840
+	LD	A,(IX+2)
+	ADD	A,4
+	LD	C,A		;REL. ADR. 4
+	IN	A,(C)
+	SET	6,A		;HGE=1
+	OUT	(C),A
+;-----------------------------------------------------------0850
+	RES	6,A		;HGE=0
+	BIT	2,(IX+4)	;VORW./RUECKW. ?
+	JR	Z,sttl6
+	SET	4,A
+	JR	sttl7
+sttl6:	SET	5,A
+sttl7:	OUT	(C),A		;TRANSPORT EIN
+;-----------------------------------------------------------0860
+	LD	A,20
+	CALL	KU.WART
+	INC	C		;REL. ADR. 5
+STT95:	EI
+	IN	A,(C)
+	BIT	5,A
+	JR	NZ,STT95
+STT96:	EI
+	IN	A,(C)
+	BIT	5,A
+	JR	Z,STT96
+;-----------------------------------------------------------0880
+;BMS =1 FUER CA. 2200 MIKROSEK. ?
+	DI
+	LD	B,80
+	CALL	KU.AUFZV
+	JR	NC,stt9x
+	LD	B,160
+STT9X:	IN	A,(C)
+	BIT	5,A
+	JR	Z,STT96		;SPRUNG WENN STOERUNG
+	BIT	0,(IX)
+	DJNZ	STT9X
+;WIRD BMS=0 IN DEN NAECHSTEN 610 MIKROSEK. ?
+	LD	B,40
+	CALL	KU.AUFZV
+	JR	NC,stt9y
+	LD	B,80
+STT9Y:	IN	A,(C)
+	BIT	5,A
+	JR	Z,STT9A		;BANDMARKE
+	BIT	0,(IX)
+	DJNZ	STT9Y
+	JR	STT95		;DATENBLOCK
+;-----------------------------------------------------------0900
+STT9A:	EI
+	CALL	KC.SCTC		;CTC STOPPEN
+;-----------------------------------------------------------0910
+	CALL	KU.VR1-1	;IN BLOCKLUECKE FAHREN
+	LD	A,50
+	CALL	KU.WART
+;-----------------------------------------------------------0920
+	BIT	2,(IX+4)
+	JR	Z,sttl9		;SPRUNG WENN SUCHEN VORWAERTS
+;-----------------------------------------------------------0930
+	LD	B,20H
+	CALL	KU.VR		;1 BLOCK RUECKSETZEN
+;-----------------------------------------------------------0940
+sttl9:	JP	STT20		;LESEN
+;-----------------------------------------------------------0950
+;FEHLER:ENDE DER AUFZEICHNUNGEN
+STT9F:	SET	7,(IX)
+	LD	(IX+1),16H	;ENDE DER AUFZEICHNUNGEN
+	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	RES	6,A
+	OUT	(C),A		;HGE=0
+	XOR	A		;A=0
+	CALL	KU.WART		;256 MS WARTEN
+	CALL	KU.AUS		;TRANSPORT UND ANWAHL AUS
+	JP	KU.KOMED
+;-----------------------------------------------------------0960
+STT9E:	IN	A,(C)		;TRANSPORTSIGNAL SETZEN
+	BIT	2,(IX+4)
+	JR	NZ,STT9H
+	SET	4,A
+STT9G:	RET
+STT9H:	SET	5,A
+	JR	STT9G
+;-----------------------------------------------------------0970
+;FEHLER
+STF01:	LD	L,12H		;SUBADRESSE 1,2
+STF99:	LD	(IX+1),L	;FEHLERSCHLUESSEL LADEN
+	SET	7,(IX)		;FEHLERBIT SETZEN
+	CALL	KU.AUS		;ANWAHL UND SONST. SIGNALE AUS
+STFRS:	JP	KU.KOMED	;KOMMANDOENDE
+STF02:	LD	L,11H		;GERAET NICHT RESERVIERT
+	JR	STF99
+STF03:	SET	4,(IX)		;GERAET NICHT BEREIT
+	JR	STFRS
+STF04:	LD	L,13H		;BLOCKLAENGE FALSCH
+	JR	STF99
+STF05:	PUSH	IX		;ENDE DER AUFZEICHNUNG (LESEN)
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+STF9A:	LD	L,14H		;FEHLERSCHLUESSEL
+	JR	STF99
+STF06:	LD	L,15H		;GERAET BESETZT
+	JR	STF99
+STF07:	LD	L,10H		;FALSCHES KOMMANDO
+	JR	STF99
+STF08:	POP	DE
+	LD	L,18H		;BANDMAKRE NICHT GEFUNDEN
+	JR	STF99
+STF0B:	LD	L,19H		;AUFZEICHNEN VERBOTEN
+	JR	STF99
+	page
+	TITLE	'KMBG-INTERRUPTSERVICEROUTINEN'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**    BAMOS      **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:  01.01.81/19.07.84  OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG:TOCHATSCHEK/wenhold **
+;**						   19.2.85 **
+;************************************************************
+;** INTERRUPTSERVICEROUTINEN KMBG                          **
+;************************************************************
+
+;-----------------------------------------------------------0010
+;INTERRUPTBEHANDLUNG AUSGABEKANAL
+KI.IAU:PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+;-----------------------------------------------------------0020
+	LD	C,(IX+2)	;BASISADRESSE AKB
+	LD	HL,(KA.PZAUS)
+	LD	DE,(KA.ZAUS)
+	DEC	DE
+	LD	A,D
+;-----------------------------------------------------------0021
+	OR	E
+	JR	Z,IAUSE		;SPRUNG WENN AUSG. BEENDET
+;-----------------------------------------------------------0030
+	INC	HL
+	LD	A,M
+	OUT	(C),A		;AUSGABE ZEICHEN
+;-----------------------------------------------------------0040
+	LD	(KA.PZAUS),HL
+	LD	(KA.ZAUS),DE
+	JP	KU.EI
+;-----------------------------------------------------------0050
+IAUSE:	LD	B,3
+	INC	C
+	INC	C		;REL.ADR.2
+	OUT	(C),B		;INT.AUSGABEKANAL SP.
+;-----------------------------------------------------------0060
+	LD	A,C
+	ADD	A,5
+	LD	C,A		;REL.ADR.7
+	OUT	(C),B		;INT.STATUS SPERREN
+	CALL	KU.EI1		;INT. FREIGABE DASY-CHAIN
+	EI
+;-----------------------------------------------------------0070
+	LD	C,0
+	LD	B,3		;30 MS
+	CALL	KU.AUFZV
+	JR	NC,iaus0
+	LD	B,6		;60 MS
+IAUS0:	LD	HL,IAUSS	;ZEITSTEUERUNG
+	CALL	KC.INIT
+	JP	KS.S13
+;-----------------------------------------------------------0080
+IAUSS:	DI
+	PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+	LD	A,(IX+2)
+	ADD	A,4
+	LD	C,A		;REL.ADR.4
+	IN	A,(C)		;REL.ADR.4
+	BIT	4,A
+	JR	Z,IAUS1
+	AND	0FH		;TRV=0
+	OUT	(C),A
+;-----------------------------------------------------------0090
+	LD	C,0
+	LD	B,7
+	JR	IAUS0		;70 MS WARTEN
+;-----------------------------------------------------------0100
+IAUS1:	INC	C		;REL.ADR.5
+	XOR	A
+	OUT	(C),A		;AUF=0
+	INC	C		;REL.ADR.6
+	LD	A,3
+	OUT	(C),A
+	DEC	C		;AEB-INT.GESPERRT
+;-----------------------------------------------------------0110
+	DEC	C		;REL.ADR.4
+	DEC	C		;REL. ADR. 3
+	LD	HL,KP.I1B	;EINGK. INT. SPERREN
+	LD	B,3
+	OTIR
+;-----------------------------------------------------------0120
+	INC	C		;REL. ADR. 4
+	LD	A,(KA.FEHLZ)
+	BIT	3,(IX+4)	;MIT RAW  ?
+	JR	Z,IAUS2		;SPRUNG WENN OHNE RAW
+	BIT	2,A		;STATUS WAEHREND DER UEBERTRAGUNG ?
+	JR	IAUS3
+IAUS2:	OR	A
+IAUS3:	JP	NZ,KF.FEHLB	;FEHLERBEHANDLUNG
+;-----------------------------------------------------------0130
+	IN	A,(C)
+	AND	3
+	OUT	(C),A		;AWA=0
+	LD	A,(KA.Z1)
+	LD	(IX+11),A
+	LD	A,(KA.Z2)
+	LD	(IX+12),A
+	JP	KU.KOMED
+;-----------------------------------------------------------0140
+;INTERRUPTBEHANDLUNG EINGABEKANAL RAW
+KI.IER:	PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)	;ADRESSE E/A-TAB.
+;-----------------------------------------------------------0150
+	LD	C,(IX+2)
+	INC	C		;REL.ADR.1
+	IN	A,(C)		;EINGABE ZEICHEN
+;-----------------------------------------------------------0160
+	LD	HL,KA.FEHLZ
+	LD	D,M		;<D>=FEHLZ
+	RES	0,D		;EINGABEKANAL ANGESPROCHEN
+	LD	HL,(KA.PZEIN)
+	CP	M
+	JR	Z,IER0
+;-----------------------------------------------------------0170
+	BIT	4,D
+	CALL	Z,IERF
+;-----------------------------------------------------------0180
+IER0:	INC	HL
+	LD	(KA.PZEIN),HL
+	LD	HL,(KA.ZIN)	;PUFFERZEIGER ERHOEHT
+	DEC	HL
+;-----------------------------------------------------------0190
+	LD	(KA.ZIN),HL	;ZAEHLER ERNIEDRIGT
+	LD	A,H
+	OR	L
+	JR	Z,IERE		;SPRUNG ZUR ENDEBEH.
+;-----------------------------------------------------------0200
+IER1:	LD	A,D
+	LD	(KA.FEHLZ),A
+	JP	KU.EI
+;-----------------------------------------------------------0210
+IERE:	RES	1,D
+	JR	IER1
+;-----------------------------------------------------------0220
+IERF:	LD	(KA.IDAT),A	;IST-DATEN
+	LD	A,M
+	LD	(KA.SDAT),A	;SOLL-DATEN
+	LD	BC,KA.PUFFS	;ADRESSE PUFFERSPEICHER
+	XOR	A		;CY=0
+	PUSH	HL
+	SBC	HL,BC		;RELATIVE POSITION
+	LD	(KA.POS),HL
+	POP	HL
+	SET	4,D		;FEHLERBIT:RAW-FEHLER
+	RET
+;-----------------------------------------------------------0230
+;INTERRUPTBEHANDLUNG EINGABEKANAL
+KI.IEL:	PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+;-----------------------------------------------------------0240
+	CALL	KC.SCTC		;CTC SPERREN
+;-----------------------------------------------------------0250
+	LD	C,(IX+2)
+	INC	C		;REL.ADR.1
+	IN	A,(C)		;EINGABE ZEICHEN
+;-----------------------------------------------------------0260
+	CP	0AAH
+	JR	NZ,IEL01
+;-----------------------------------------------------------0270
+	LD	B,72
+IEL00:	DJNZ	IEL00		;WARTEN 370 MIKROS.
+;-----------------------------------------------------------0280
+	INC	C
+	INC	C
+	INC	C
+	INC	C		;REL.ADR.5
+	IN	D,(C)
+	BIT	5,D		;BMS=1?
+	JR	Z,IEL02		;SPRUNG ZUR ENDEBEH.
+;-----------------------------------------------------------0290
+IEL01:	LD	HL,(KA.PZEIN)
+	LD	M,A		;ABSPEICHERN ZEICHEN
+;-----------------------------------------------------------0300
+	INC	HL
+	LD	(KA.PZEIN),HL	;PUFFERZEIGER ERHOEHT
+;-----------------------------------------------------------0310
+	LD	DE,KA.KOMDO
+	XOR	A
+	SBC	HL,DE
+	JP	Z,IELFF		;SPRUNG WENN PUFFERSP. UEBERSCHR.
+;-----------------------------------------------------------0320
+	LD	HL,(KA.ZIN)
+	INC	HL
+	LD	(KA.ZIN),HL
+;-----------------------------------------------------------0330
+	JP	KU.EI
+;-----------------------------------------------------------0340
+IEL02:	DEC	C
+	DEC	C		;REL.ADR.3
+	LD	A,3
+	OUT	(C),A		;INT.EINGABEKANAL GESP.
+	LD	HL,KA.CONTR
+	LD	M,1
+;-----------------------------------------------------------0350
+	CALL	KU.EI1	;RETI
+	EI
+;-----------------------------------------------------------0360
+	LD	HL,(KA.PZEIN)	;CRC-ZEICHEN ABSPEICHERN
+	DEC	HL
+	LD	A,M
+	LD	(KA.CRCZ+1),A	;2.BYTE CRC
+	DEC	HL
+	LD	A,M
+	LD	(KA.CRCZ),A	;1. BYTE CRC-ZEICHEN
+;-----------------------------------------------------------0370
+	LD	B,2
+	LD	C,0
+	CALL	KU.AUFZV
+	JR	NC,iel06
+	LD	B,3
+IEL06:	LD	HL,IEL03
+	CALL	KC.INIT
+	JP	KS.S13
+IEL03:	PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+;-----------------------------------------------------------0380
+	LD	A,(IX+2)
+	ADD	A,4
+	LD	C,A
+	IN	A,(C)
+	BIT	4,A		;TRV=0 ?
+	JR	Z,IEL07
+	AND	0FH
+	OUT	(C),A
+;-----------------------------------------------------------0390
+	LD	C,0
+	LD	B,7
+	JR	IEL06		;WARTEN 70 MS
+;-----------------------------------------------------------0400
+IEL07:	LD	HL,(KA.ZIN)	;BLOCKLAENGE-1
+	LD	DE,3
+	XOR	A
+	SBC	HL,DE
+	JR	Z,IEL05		;SPRUNG WENN STEUERBLOCK
+;-----------------------------------------------------------0410
+	PUSH	HL
+	POP	BC
+	LD	(IX+9),B
+	LD	(IX+10),C
+	LD	HL,KA.PUFFS+1	;ADRESSE DATEN
+	LD	(IX+7),L
+	LD	(IX+8),H
+;-----------------------------------------------------------0420
+	LD	B,C
+	CALL	KU.CRC		;CRC-ZEICHEN BERECHNEN
+	INC	HL		;ADRESSE 1.BYTE CRC-ZEICHEN
+	LD	B,M		;1.BYTE CRC-ZEICHEN NACH B
+	INC	HL		;ADRESSE 2.BYTE CRC-ZEICHEN
+	LD	C,M		;2.BYTE GELADEN NACH C
+	PUSH	DE
+	POP	HL
+	XOR	A
+	SBC	HL,BC		;DIFFERENZ DER CRC-ZEICHEN
+;-----------------------------------------------------------0430
+	CALL	NZ,IELF		;FEHLER
+;-----------------------------------------------------------0431
+IEL04:	LD	A,(IX+2)
+	ADD	A,4
+	LD	C,A		;REL. ADR. 4
+	LD	A,(KA.FEHLZ)
+	OR	A
+	JP	NZ,KF.FEHLB
+;-----------------------------------------------------------0440
+	CALL	KU.AUS
+	JP	KU.KOMED
+;-----------------------------------------------------------0450
+IEL05:	XOR	A		;BANDMARKE GELESEN
+	LD	(IX+7),A
+	LD	(IX+8),A
+	LD	(IX+9),A
+	LD	(IX+10),A
+	JR	IEL04
+;-----------------------------------------------------------0460
+IELF:	LD	HL,KA.FEHLZ
+	SET	3,M
+	RET
+;-----------------------------------------------------------0470
+IELFF:	CALL	KU.AUS
+	CALL	KU.EI1		;RETI
+	SET	7,(IX)
+	LD	(IX+1),17H
+	JR	IEL04
+
+;INTERRUPTBEHANDLUNG STATUS
+KI.IST:	PUSH	IX
+	CALL	KU.RRET
+	LD	IX,(KA.AEATB)
+	LD	A,(IX+2)
+	ADD	A,7
+	LD	C,A		;REL.ADR.7
+	LD	HL,KA.FEHLZ	;INTERNER FEHLERZEIGER
+	SET	2,M		;STATUSFEHLER
+	LD	A,3
+	OUT	(C),A		;INT.STATUS SPERREN
+	JP	KU.EI
+
+;INTERRUPTBEHANDLUNG AEB
+KI.IBE:	PUSH	AF
+	PUSH	BC
+	PUSH	IX
+	LD	IX,(KA.AEATB)
+	LD	A,(IX+2)
+	ADD	A,6
+	LD	C,A
+	LD	A,03H
+	OUT	(C),A
+	SET	1,(IX)
+	POP	IX
+	POP	BC
+	POP	AF
+	EI
+KI.IBL:	RETI
+	page
+	TITLE	'KMBG-UNTERPROGRAMME'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:  01.01.81/19.07.84  OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG:TOCHATSCHEK/wenhold **
+;**						  11.10.85 **
+;************************************************************
+;** UNTERPROGRAMME ZUR BEDIENROUTINE KMBG                  **
+;************************************************************
+
+;ENDEBEHANDLUNG FUER NORMALE INTERRUPTBEHANDLUNG
+KU.EI:	CALL	KU.RLAD
+	POP	IX
+	EI
+KU.EI1:	RETI
+
+;VERZWEIGUNG AUS STEUERTEIL ZUM EINTRITTS-
+;PUNKT DES STEUERPROGRAMMES
+KU.KOMED:
+	DI
+	RES	0,(IX)
+	LD	L,(IX+5)
+	LD	H,(IX+6)
+	PUSH	HL
+	POP	IX
+	CALL	KU.RLAD
+	EX	(SP),IX
+	EI
+	RET
+
+;UP ZUR ABFRAGE DES BEREITSIGNALS AN DER PIO
+;UP STELLT CARRY-FLAG, C=0 GERAET BEREIT
+;                      C=1 GERAET NICHT BEREIT
+;<IX>=ANFANGSADRESSE E/A-TABELLE
+;UP ZERSTOERT REG. AF
+KU.BER:	PUSH	BC
+	LD	A,(IX+2)
+	ADD	A,5
+	LD	C,A
+	IN	A,(C)
+	SCF
+	BIT	0,(IX+3)
+	JR	Z,BERT2
+	BIT	4,A
+	JR	Z,BERTE
+	CCF
+	JR	BERTE
+BERT2:	BIT	3,A
+	JR	Z,BERTE
+	CCF
+BERTE:	POP	BC
+	RET
+;UP ZUR BILDUNG VON RSI
+;<C>=REL.ADR.4
+KU.RSI:	IN	B,(C)
+	LD	A,B
+	AND	73H		;EAW1=EAW2=0
+	OUT	(C),A
+	OUT	(C),B
+	RET
+
+;REGISTER AF,BC,DE,HL RETTEN IN SP
+KU.RRET:EX	(SP),HL
+	PUSH	DE
+	PUSH	BC
+	PUSH	AF
+	JP	(HL)
+
+;REGISTER AF,BC,DE,HL LADEN AUSSP
+KU.RLAD:EX	(SP),HL
+	INC	SP
+	INC	SP
+	POP	AF
+	POP	BC
+	POP	DE
+	EX	(SP),HL
+	RET
+
+;UP ZUM TESTEN BMS AUF STOERUNG
+;<C>=REL.ADR. 5
+; BMS=1 BEI AURUF DES UP
+;REG. A,B,F WERDEN ZERSTOERT
+;AUSGANG: CY=1 STOERUNG
+;         CY=0 BMS=1 GROESSER 0,2 MM BAND
+BMST:	LD	B,43
+	CALL	KU.AUFZV
+	JR	NC,bmst0
+	LD	B,73
+BMST0:	SCF
+	IN	A,(C)
+	BIT	5,A
+	RET	Z
+	DJNZ	BMST0
+	CCF
+	RET
+
+;VOR-/RUECKSETZEN UM EINEN BLOCK
+;<C>=REL.ADR.4
+;<B>=10H    VORWAERTS
+;<B>=20H    RUECKWAERTS
+;REG. A,B   WERDEN ZERSTOERT
+KU.VR:	DI
+	IN	A,(C)
+	SET	6,A		;HGE=1
+	OUT	(C),A
+	RES	6,A		;HGE=0
+	OR	B
+	OUT	(C),A		;TRANSPORT EINSCHALTEN
+	INC	C		;REL.ADR.5
+	LD	A,18
+	CALL	KU.WART		;WARTEN BIS NENNGESCHW.
+BLVR0:	IN	A,(C)		;BMS?
+	BIT	5,A
+	JR	Z,BLVR0
+	CALL	BMST		;TEST BMS AUF STOERUNG
+	JR	C,BLVR0		;SPRUNG WENN STOERUNG
+	PUSH	DE
+KU.VR1:	IN	A,(C)
+	BIT	5,A
+	JR	NZ,KU.VR1	;SPRUNG SOLANGE BMS=1
+;TEST AUF WEITERE EINBRUECHE DES SIGNALS BMS
+	LD	DE,1243
+	CALL	KU.AUFZV
+	JR	NC,blvr2
+	LD	DE,2483
+BLVR2:	IN	A,(C)
+	BIT	5,A
+	JR	NZ,BLVR3
+	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,BLVR2
+	DEC	C
+	IN	A,(C)
+	AND	0FH
+	OUT	(C),A		;TRV=TRR=0
+	POP	DE
+	EI
+	RET
+BLVR3:	CALL	BMST
+	JR	NC,KU.VR1	;KEINE STOERUNG
+	JR	BLVR2		;STOERUNG
+
+;CRC-ZEICHEN BERECHNEN
+;<B>=BLOCKLAENGE,0=256
+;<HL>=PUFFERADRESSE
+;IN DE NACH AUFRUF CRC-ZEICHEN
+; <D>=1.BYTE, WIRD ZUERST GESENDET
+; <E>=2. BYTE,WIRD DANACH GESENDET
+KU.CRC:	LD	DE,0
+CRC0:	PUSH	BC		;BYTELAENGE
+	LD	B,8
+	LD	C,M
+CRC1:	LD	A,C
+	XOR	D
+	RRCA			;ERGEBNIS ANTIVALENZ WORT-BYTE/CRC-BYTE,BIT 0
+	PUSH	AF
+	RR	E		;VERSCHIEBUNG VON DE UM 1 BIT NACH RECHTS
+	RR	D
+	POP	AF		;RUECKRETTEN F
+	JR	NC,CRC2		;SPRUNG WENN ANTIVALENZ 0+0=0
+	LD	A,D		;KORREKTUR=UMKEHR BIT13/BIT0
+	XOR	1		;MASKE FUER D
+	LD	D,A		;KORREKTUR D
+	LD	A,E
+	XOR	20H		;MASKE FUER E
+	LD	E,A		;KORREKTUR E
+CRC2:	RRC	C		;SCHIEBEN DATENBYTE
+	DJNZ	CRC1
+	POP	BC		;BYTE ABGEARBEITET
+	DJNZ	CRC3		;ZAHLER FUER BLOCKLAENGE
+	RET
+CRC3:	INC	HL		;ADRESSE NAECHSTES DATENBYTE AUS PUFFER
+	JR	CRC0
+
+;UP ZUM EINSCHALTEN DES AEB-INT.
+;<C>=REL.ADR.6
+;<A>=WIRD ZERSTOERT
+KU.AEBEI:
+	LD	A,KT.IBL
+	OUT	(C),A
+	LD	A,83H
+	OUT	(C),A
+	EI
+	NOP
+	NOP
+	DI
+	LD	A,KT.IBE
+	OUT	(C),A
+	RET
+
+;UP ZUM EINSCHALTEN DES STATUSINTERRUPTS
+;<IX>=ANFANGSADRESSE E/A-TABELLE
+KU.STAE:DI
+	LD	A,(IX+2)
+	ADD	A,7
+	LD	C,A		;REL.ADR.7
+	LD	A,KT.IBL
+	OUT	(C),A
+	LD	A,83H
+	OUT	(C),A		;FREIGABE BLINDINTERRUPT
+	EI
+	NOP
+	NOP
+	DI
+	LD	HL,KP.I2B
+	LD	B,5
+	OTIR
+	OUT	(C),A		;FREIGABE INT.STATUS
+	RET
+
+;WARTEN, <A>=ANZAHL MILLISEKUNDEN > 0
+;REGISTER A,B WERDEN ZERSTOERT
+KU.WART:LD	B,188
+	DJNZ	$
+	DEC	A
+	JR	NZ,KU.WART
+	RET
+
+;UP ZUM EINSCHALTEN INTERRUPT EINGABEKANAL
+;EINGANG: <L>=L-TEIL INT.-ADRESSE
+;         <C>=REL.ADR.3
+;REG.B WIRD ZERSTOERT
+KU.EINIE:
+	ld	a,KT.IBL	;ADRESSE RETI-BEFEHL
+	OUT	(C),A
+	LD	A,83H		;INT.FREIGABE
+	OUT	(C),A
+	EI
+	NOP
+	NOP
+	DI
+	OUT	(C),L		;INT.-VEKTOR RAW
+	RES	1,C		;REL.ADR.1
+	IN	B,(C)
+	SET	1,C		;REL. ADR. 3
+	RET			;REDY EINSCHALTEN
+
+;MAGNETBAND AUS ANFANGSSTELLUNG EINZIEHEN
+;<IX>=ANFANGSADRESSE E/A-TABELLE
+;<C>=REL.ADR.4
+KU.MBAN:INC	C		;REL.ADR.5
+	LD	A,(IX+4)
+	AND	7FH		;BIT 7 AUSBLENDEN
+	CP	2		;LESEN ?
+	JR	Z,MBAN0		;AUF=0
+	CP	71H		;BM SUCHEN VORWAERTS ?
+	JR	Z,MBAN0		;AUF=0
+	LD	B,2
+	OUT	(C),B		;AUF=1
+MBAN0:	DEC	C		;REL.ADR.4
+	IN	B,(C)
+	SET	4,B
+	OUT	(C),B		;TRV=1
+MBAN1:	IN	B,(C)
+	BIT	7,B		;AEB?
+	JR	Z,MBAN1
+	LD	B,255
+	DJNZ	$		;WARTEN 1,3 MS
+	IN	B,(C)
+	BIT	7,B
+	JR	Z,MBAN1		;SPRUNG WENN STOERUNG
+MBAN2:	IN	B,(C)
+	BIT	7,B
+	JR	NZ,MBAN2	;SPRUNG SOLANGE AEB=1
+	BIT	1,A
+	JR	NZ,MBAN5
+	CP	71H
+	JR	Z,MBAN5
+	LD	HL,MBAN6
+	LD	B,40
+	CALL	KU.AUFZV
+	JR	NC,mban3
+	LD	B,80
+MBAN3:	PUSH	BC
+	LD	C,0
+	CALL	KC.INIT		;150 MM INITIALLUECKE
+MBAN4:	HALT
+	JR	MBAN4
+MBAN5:	LD	B,1
+	LD	HL,MBAN6
+	JR	MBAN3		;10 MS WARTEN
+MBAN6:	POP	BC
+	POP	BC
+	IN	A,(C)
+	RES	4,A
+	OUT	(C),A		;TRV=0
+	LD	B,4
+	LD	HL,MBAN7	;40 MS WARTEN
+	JR	MBAN3
+MBAN7:	POP	BC
+	POP	BC
+	INC	C		;REL. ADR. 5
+	XOR	A
+	OUT	(C),A		;AUF=0
+	DEC	C		;REL. ADR.4
+	RET
+
+;LOESCHE BAND VON 6 ODER 40 CM LAENGE
+;<IX>=ANFANGSADRESSE E/A-TABELLE
+;<B>=ZEITKONSTANTE FUER 38 CM*S**-1
+;<C>=REL.ADR.6 BEIM AUSGANG
+KU.MBVZ:LD	A,(IX+2)	;BASISADRESSE
+	ADD	A,5
+	LD	C,A		;REL.ADR.5
+	LD	A,2
+	OUT	(C),A		;AUF=1
+	INC	C		;REL.ADR.6
+	CALL	KU.AEBEI		;AEB.AUF INTERRUPT
+	DEC	C
+	DEC	C		;REL.ADR.4
+	IN	A,(C)
+	SET	4,A
+	OUT	(C),A		;TRV=1
+	CALL	KU.AUFZV
+	JR	NC,MBVZ0
+	SLA	B		;MULTIPLIKATION MIT 2
+MBVZ0:	LD	HL,MBVZ3
+MBVZ1:	PUSH	BC
+	LD	C,0
+	CALL	KC.INIT
+MBVZ2:	HALT
+	JR	MBVZ2
+MBVZ3:	POP	BC
+	POP	BC		;REL.ADR.4
+	IN	A,(C)
+	RES	4,A
+	OUT	(C),A		;TRV=0
+	LD	B,4		;40 MS WARTEN
+	LD	HL,MBVZ4
+	JR	MBVZ1
+MBVZ4:	POP	BC
+	POP	BC
+	INC	C		;REL.ADR.5
+	XOR	A
+	OUT	(C),A		;AUF=0
+	INC	C		;REL.ADR.6
+	LD	A,3
+	OUT	(C),A		;AEB FUER INT.GESPERRT
+	RET
+
+;UP ZUM AUSSCHALTEN TRANSPORT,ANWAHL,AEB-INT.,STAT.-INT.,INT. E/A-KANAL
+;<IX>=ANFANGSADRESSE E/A-TABELLE;REG. AF,BC,DE WERDEN ZERSTOERT
+KU.AUS:	LD	C,(IX+2)	;BASISADRESSE
+	INC	C
+	INC	C		;REL. ADR. 2
+	LD	D,3
+	OUT	(C),D		;AUSGABEKANAL GESPERRT
+	INC	C		;REL ADR. 3
+	OUT	(C),D		;EINGABEKANAL GESPERRT
+	INC	C		;REL. ADR. 4
+	IN	A,(C)
+	AND	0FH
+	OUT	(C),A		;TRANSPORT AUS
+	LD	A,40
+	CALL	KU.WART		;40 MS WARTEN
+	IN	A,(C)
+	AND	3
+	OUT	(C),A		;ANWAHL AUS
+	INC	C		;REL. ADR. 5
+	LD	E,0
+	OUT	(C),E		;AUF=0
+	INC	C		;REL. ADR. 6
+	OUT	(C),D		;AEB-INT. GESPERRT
+	INC	C		;REL. ADR. 7
+	OUT	(C),D		;STAT.-INT. GESPERRT
+	RET
+
+;UP ZUR ABFRAGE AZV
+;CY=1 WENN GESCHW.=19 CM*S**-1
+;CY=0 WENN GESCHW.=38 CM*S**-1
+;<IX>=ADRESSE E/A-TABELLE
+;AF WIRD ZERSTOERT
+KU.AUFZV:
+	PUSH	BC
+	LD	A,(IX+2)
+	ADD	A,5
+	LD	C,A
+	SCF
+	IN	B,(C)
+	BIT	0,B
+	JR	NZ,aufzv1
+	CCF
+aufzv1:	POP	BC
+	RET
+	page
+	TITLE	'KMBG-CTC ROUTINE'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:  01.01.81/19.07.84  OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG:TOCHATSCHEK/wenhold **
+;**						   19.2.85 **
+;************************************************************
+;** ROUTINE ZUR CTC BEDIENUG                               **
+;************************************************************
+;************************************************************
+
+;ZEITKONTROLLROUTINE FUER KASSETTENMAGNETBAND
+;BEIM AUFRUF DES INITIALISIERUNGSTEILS:
+;(C)=0 SPRUNG ZUR ADRESSE,KOMMANDO
+;(C)=1 KONTROLLE EREIGNIS
+;(B)=ZEITKONSTANTE
+;(HL)=ADRESSE
+KC.INIT:DI
+	LD	(KA.KOMDO),BC	;ARBEITSBEREICH LADEN
+	LD	(KA.ADR),HL
+	LD	C,KK.CBA
+	LD	HL,INITK	;KANAL X AUF 10 MS INTERRUPTFREQUENZ PROGR.
+	LD	B,1
+	OTIR
+	CALL	LDADR
+	LD	B,2
+	OTIR
+	EI
+	RET
+
+KC.SCTC:PUSH	BC		;CTC KANAL X INTERRUPT SPERREN
+	CALL	LDADR
+	LD	A,3
+	OUT	(C),A
+	POP	BC
+	RET
+
+;INTERRUPTSERVICEROUTINE CTC KANAL X
+KC.ICT:	PUSH	AF
+	PUSH	HL
+	LD	HL,KA.ZEITK
+	DEC	M
+	POP	HL
+	JR	Z,ICTCE
+ICTCR:	POP	AF
+	EI
+	RETI
+ICTCE:	CALL	KC.SCTC
+	LD	A,(KA.KOMDO)
+	OR	A
+	JR	NZ,ICTCK
+ICTCS:	POP	AF
+	PUSH	HL
+	LD	HL,(KA.ADR)
+	EX	(SP),HL
+	EI
+	RETI
+
+ICTCK:	LD	A,(KA.CONTR)
+	OR	A
+	JR	Z,ICTCS
+	XOR	A
+	LD	(KA.CONTR),A
+	JR	ICTCR
+
+;UP ZUM LADEN VON REG.C MIT ADRESSE CTC-KANAL
+LDADR:	LD	A,KK.CBA	;BASISADR. CTC
+	ADD	A,KK.CKA	;CTC-KANAL
+	LD	C,A
+	RET
+
+;*** KONSTANTEN ZUM INIT.CTC ***
+INITK:	DB	KV.IC0		;ADRESSE
+	DB	0A5H		;KANALSTEUERWORT
+	DB	96		;ZEITKONSTANTE
+;*******************************
+	page
+	TITLE	'KMBG-FEHLERBEHANDLUNG'
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:  01.01.81/19.07.84  OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT/ AENDERUNG:TOCHATSCHEK/wenhold **
+;**						   19.2.85 **
+;************************************************************
+;** FEHLERBEHANDLUNG ZUR BEDIENROUTINE KMBG                **
+;************************************************************
+;************************************************************
+
+;-----------------------------------------------------------0010
+KF.FEHLB::
+	LD	B,(IX+4)
+	BIT	7,B
+	JR	NZ,FEHL7	;OHNE FEHLERWIEDERHOLUNG
+	BIT	1,B
+	LD	B,20H
+	LD	A,(KA.Z1)
+	JR	Z,FEHL2		;SPRUNG WENN AUSGABE
+;-----------------------------------------------------------0020
+	CP	7
+	JR	Z,FEHL1		;SPRUNG WENN 7 X GELESEN
+;-----------------------------------------------------------0030
+	INC	A
+	LD	(KA.Z1),A	;ZAEHLER ERHOEHEN
+	CALL	KU.VR		;EINEN BLOCK RUECKSETZEN
+;-----------------------------------------------------------0050
+	LD	A,50
+	CALL	KU.WART
+	JP	KS.S22	;LESEN WIEDERHOLEN
+;-----------------------------------------------------------0060
+FEHL7:	BIT	1,B		;OHNE FEHLERWIEDERHOLUNG
+FEHL4:	LD	A,22H
+	JR	Z,FEHL8		;SCHREIBEN
+FEHL1:	LD	A,21H		;FEHLER NACH 7X LESEN
+FEHL8:	LD	(IX+1),A	;EINTRAGEN FEHLERNUMMER
+FEHLE:	SET	7,(IX)		;FEHLERBIT SETZEN
+	JP	KU.KOMED
+;
+FEHL6:	LD	A,23H		;KEIN ECHOSIGNAL VOM EINGABEKANAL BEI RAW
+	JR	FEHL8
+;
+FEHL2:	LD	HL,KA.FEHLZ	;FEHLERANZEIGER
+	BIT	0,M
+	JR	NZ,FEHL6
+;-----------------------------------------------------------0090
+	CP	7
+	JR	Z,FEHL3		;SPRUNG WENN 7X GESCHRIEBEN
+	INC	A
+	LD	(KA.Z1),A	;ZAEHLER
+	CALL	KU.VR		;EINEN BLOCK RUECKSETZEN
+;------------------------------------------------------------0120
+	LD	A,70
+	CALL	KU.WART
+;------------------------------------------------------------------0130
+FEHL5:	LD	A,(IX+4)
+	CP	51H
+	JP	Z,KS.S72	;SCHREIBEN BANDMARKE
+;---------------------------------------------------------0140
+	JP	KS.SEP	;SCHREIBWIEDERHOLUNG
+;-----------------------------------------------------------0150
+FEHL3:	LD	A,(KA.Z2)
+	CP	2		;BLOCKLUECKE 2 X VERLAENGERT ?
+	JR	Z,FEHL4
+;-----------------------------------------------------------0160
+	INC	A
+	LD	(KA.Z2),A
+;-----------------------------------------------------------0170
+	CALL	KU.VR		;EINEN BLOCK RUECKSETZEN
+;-----------------------------------------------------------0180
+	LD	A,70
+	CALL	KU.WART
+;-----------------------------------------------------------0190
+	LD	B,16
+	CALL	KU.MBVZ		;60 MM MB LOESCHEN
+;-----------------------------------------------------------0200
+	LD	A,70
+	CALL	KU.WART
+;-----------------------------------------------------------0210
+	XOR	A
+	LD	(KA.Z1),A	;Z1=0
+	JR	FEHL5
+	page
+	TITLE	'PROGRAMMIEREN U855 AUF AKB'
+;************************************************************
+;************************************************************
+;**               **                                       **
+;**   BAMOS       **   KASSETTENMAGNETBAND                 **
+;**               **                                       **
+;************************************************************
+;** STAND:      01.01.81       OS-VERSION:   V1.2          **
+;** BEARBEITER: HILDEBRANDT    aenderung:wenhold 19.2.85   **
+;************************************************************
+;** PROGRAMMIEREN DER PIO'S AUF DER AKB                    **
+;************************************************************
+
+;ANSCHLUSSBEDINGUNGEN:
+;ANFANGSADRESSE E/A-TABELLE IN IX
+;BASISADRESSE AKB WIRD AUS E/A-TABELLE UEBERNOMMEN
+;REGISTER AF,BC,HL WERDEN ZERSTOERT
+;NACH DEM INITIALISIEREN SIND BEIDE U 855 FUER INT. GESTPERRT
+kp.ini:	LD	C,(IX+2)	;BASISADRESSE
+	INC	C
+	INC	C		;ADRESSE KOMMANDO TOR A
+	LD	B,3
+	LD	HL,INI1A
+	DI
+	OTIR
+	INC	C		;ADRESSE KOMMANDO TOR B
+	LD	B,3
+	OTIR
+	INC	C
+	INC	C
+	INC	C
+	LD	B,5
+	OTIR
+	INC	C
+	LD	B,5
+	OTIR
+	EI
+	DEC	C
+	DEC	C
+	DEC	C
+	LD	A,3		;GRUNDZUSTAND STEUERLEITUNGEN
+	OUT	(C),A
+	INC	C
+	XOR	A
+	OUT	(C),A
+	RET
+
+;STEUERWORTE ZUR INITIALISIERUNG AKB
+;STEUERWORTE BAUSTEIN 1 TOR A-AUSGABEKANAL
+INI1A:	DB	KT.IAU	 	;INTERRUPTVEKTOR AUSGABEKANAL
+	DB	0FH		;BETRIEBSART:AUSGABE
+	DB	03H		;INTERRUPT VERBOTEN
+
+;STEUERWORTE BAUSTEIN 1 TOR B-EINGABEKANAL
+KP.I1B:	DB	KT.IEL	 	;INTERRUPTVEKTOR EINGABEKANAL
+	DB	4FH		;BETRIEBSART:EINGABE
+	DB	03H		;INTERRUPT VERBOTEN
+
+;STEUERWORTE BAUSTEIN 2 TOR A
+INI2A:	DB	KT.IBE		;INTERRUPTVEKTOR SIGNAL AEB
+	DB	0CFH		;BETRIEBSART:BIT EIN/AUSG.
+	DB	80H		;I/O-MASKE
+	DB	17H		;UNTERBRECHUNGSSTEUERUNG
+	DB	7FH		;MASKE
+
+;STEUERWORTE BAUSTEIN 2 TOR B
+KP.I2B:	DB	KT.IST		;INTERRUPTVEKTOR STATUS
+	DB	0CFH		;BETRIEBSART:BIT EIN/AUSG.
+	DB	0FDH		;I/O-MASKE
+	DB	37H		;UNTERBRECHUNGSSTEUERUNG
+	DB	0BFH		;MASKE,NUR STATUS AUF INT.
+
+dphn::	defw	0
+dpho::	defw	0
+
+zei::	defb	0
+dev::	defb	0
+trk::	defw	0
+sec::	defw	0
+dma::	defw	0
+
+readop::defb	0		; workspace for blocking/deblocking
+rsflag::defb	0
+wrtype::defb	0
+erflag::defb	0
+sechst::defb	0
+
+dirbf::	defs	128,0
+spret::	defw	0
+	defs	80h,0
+spber::
+	defs	20h,0
+spber1::
+
+	end
+

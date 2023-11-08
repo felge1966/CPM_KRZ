@@ -1,0 +1,362 @@
+; Druckerbedienung SD1157/1152/6311 mit IFSS/V24-Schnittstelle
+; ------------------------------------------------------------
+;
+; 16.01.1986 (M. Krzikalla)
+; 08.10.1986
+;       Fehler in Druckertotsteuerung behoben
+; 03.02.1988 (M. Krzikalla)
+;       Druckertot:  ^C       ABORT
+;                    ENTER    uebergehen
+;                    anderes  wiederholen
+; 04.02.1988 (M. Krzikalla)
+;       bei Druckertot auch Druckerabschaltung moeglich
+
+ if1
+ .printx * Drucker
+ .printx *     04.02.88 - SD1157/1152/6311 an ATS mit ESC-Bedienung Kanal A/B
+ .printx *                  --- gleichzeitige Bedienung beider Kanaele ---
+ endif
+
+; Toradressen (in EQ.MAC zu definieren)
+;
+; lo.ctc       - Basisadresse des Takt-CTC
+; lo.sioca     - Steuerport A
+; lo.siocb     - Steuerport B
+; lo.sioda     - Datenport  A
+; lo.siodb     - Datenport  B
+
+
+lo.kalt	macro
+lo.kal::ld	a,5		; 9600 baud
+	out	(lo.ctc),a	; Sendetakt          Kanal A
+	out	(lo.ctc+1),a	; Empfangstakt       Kanal A
+	out	(lo.ctc+2),a	; Sende/Empfangstakt Kanal B
+	ld	a,1
+	out	(lo.ctc),a
+	out	(lo.ctc+1),a
+	out	(lo.ctc+2),a
+	ld	hl,lo.par
+	ld	bc,800h+lo.sioca
+	otir
+	ld	bc,800h+lo.siocb
+	otir
+	xor	a		; Drucker muss noch syncronisiert werden
+	ld	(qlo),a
+	jr	lo.ka1
+
+lo.par::defb	0,18h		; SIO ruecksetzen Kanal A
+	defb	4,45h		; clock x 16 / 1 stoppbit / ungerade Paritaet
+	defb	3,41h		; Empf. ein  / 7 bit pro Zeichen
+	defb	5,28h		; Sender ein / 7 bit pro Zeichen
+;
+	defb	0,18h		; SIO ruecksetzen Kanal B
+	defb	4,45h		; clock x 16 / 1 stoppbit / ungerade Paritaet
+	defb	3,41h		; Empf. ein  / 7 bit pro Zeichen
+	defb	5,28h		; Sender ein / 7 bit pro Zeichen
+lo.ka1::
+	endm
+
+lo.warm	macro
+	xor	a		; es laeuft keine ESC-Folge fuer den Drucker
+	ld	(lo.a01+1),a
+	ld	(lo.ch),a	; Drucker wieder zulassen
+	call	lo1.reset	; 72 Zeilen einstellen
+	endm
+
+lo.xof	macro
+	endm
+lo.xon	macro
+	endm
+
+; 66 Zeilen einstellen
+; --------------------
+;
+lo.reset::
+	xor	a		; 66 Zeilen pro Seite einstellen
+	ld	(lo.a08+1),a
+	ld	(drzei),a	; Zeilenzaehler = 0
+	ld	(qlo),a		; Drucker soll noch synchronisiert werden
+	ld	a,7fh		; Reset-Zeichen an Drucker ausgeben
+	out	(lo.sioda),a
+	out	(lo.siodb),a
+	ret
+
+; 72 Zeilen einstellen
+; --------------------
+;
+lo1.reset::
+	ld	a,lo.03a-lo.a08-2 ; 72 Zeilen pro Blatt einstellen
+	ld	(lo.a08+1),a
+	ret
+
+; Zeichenausgabe
+; --------------
+;
+lo.ch::
+lo1.ch::nop			; zur Abschaltung des Druckers auf RET setzen
+	push	bc
+	ld	hl,qlo		; wurde Drucker schon initialisiert?
+	ld	a,(hl)
+	or	a
+	jr	nz,lo.a00
+
+	ld	a,7fh
+	out	(lo.sioda),a	; RESET an Drucker geben
+	out	(lo.siodb),a
+	ld	bc,0
+lo.a0x::dec	bc		; ca. 1 sec warten
+	ld	a,b
+	or	c
+	jr	nz,lo.a0x
+
+lo.a00::ld	(hl),0ffh
+	pop	bc
+	ld	a,c
+
+; Sprungverteiler zum Hinauszw. von ESC-Folgen
+; 
+;  folgende Folgen werden ohne DC3-Unterbrechung an den Drucker gegeben:
+;    ESC 5Bh (Ziffern) 20h XX
+;    ESC 5Bh (Ziffern) XX
+;    ESC 25h XX
+;    ESC XX
+;
+; lo.a02 - es lauft keine ESC-Folge
+; lo.a03 - es ist ESC gewesen
+; lo.a04 - es ist ESC 25h oder ESC 5Bh (Ziffern) 20h gewesen ==> es folgt 1 Z.
+; lo.a07 - es ist ESC 5Bh gewesen ==> es folgen Ziffern
+;
+lo.a01::jr	lo.a02
+
+lo.a02::cp	1bh		; beginnt ESC-Folge?
+	jr	nz,lo.a08	; -> nein
+	call	lo.03a		; ESC an Drucker geben
+	ld	a,lo.a03-lo.a01-2
+	ld	(lo.a01+1),a
+	ret
+
+lo.a03::cp	5bh		; beginnt Ziffernfolge?
+	jr	z,lo.a05	; -> ja
+	cp	25h		; folgt noch ein Zeichen der ESC-Folge?
+	jr	z,lo.a06	; -> ja
+
+lo.a04::ld	a,lo.a02-lo.a01-2 ; ESC-Folge ist beendet
+	ld	(lo.a01+1),a
+	jr	lo.03a		; -> letztes Zeichen der Folge ausgeben
+
+lo.a05::ld	a,lo.a07-lo.a01-2 ; es folgen Ziffern
+	ld	(lo.a01+1),a
+	jr	lo.03a		; -> Zeichen ausgeben
+
+lo.a06::ld	a,lo.a04-lo.a01-2 ; es folgt noch genau ein Zeich. in der Folge
+	ld	(lo.a01+1),a
+	jr	lo.03a		; -> Zeichen ausgeben
+
+lo.a07::cp	20h		; folgt noch genau ein weiteres Zeichen?
+	jr	z,lo.a06	; -> ja
+	cp	30h		; sind die Ziffern zuende?
+	jr	c,lo.a04	; -> ja
+	cp	3ah
+	jr	nc,lo.a04	; -> ja
+	jr	lo.03a		; -> Zeichen ausgeben
+
+; Sprungverteiler Zeilenzaehlung
+;
+;  lo.03a - ohne Zeilenzaehlung ausgeben
+;  lo.a09 - mit  Zeilenzaehlung ausgeben
+;
+lo.a08::jr	lo.03a
+lo.a09::cp	lf		; line feed?
+	jr	nz,lo.01	; -> nein
+	ld	a,(drzei)
+	inc	a
+	ld	(drzei),a
+	cp	66
+	jr	c,lo.03a
+
+lo.00::	xor	a		; Blattvorschub
+	ld	(drzei),a
+	ld	c,ff
+	jr	lo.03a
+
+lo.01::	cp	ff		; form feed?
+	jr	z,lo.00		; -> ja
+
+lo.03a::ld	b,3		; ca. 15s
+	ld	de,0
+lo.03b::dec	de
+	push	bc
+	push	de
+	push	hl
+	call	lo.sta		; ist Drucker bereit?
+	pop	hl
+	pop	de
+	pop	bc
+	or	a
+	jr	nz,lo.04	; -> ja
+	ld	a,(lo.dc)	; liegt DC4 Fehlerstatus vor?
+	cp	14h
+	jr	z,lo.03c	; -> ja, also ist der Drucker tot
+	ld	a,d
+	or	e
+	jr	nz,lo.03b
+	djnz	lo.03b
+
+lo.03c::call	lo.tot		; Drucker ist 15s nicht bereit, also Tod melden
+	jr	lo.03a
+
+lo.04::	ld	a,c		; Zeichen an Drucker geben
+	out	(lo.sioda),a
+	out	(lo.siodb),a
+	ret
+
+; Druckertot melden
+;
+lo.tot::push	bc
+	push	de
+	push	hl
+lo.to0::setbs
+	ld	hl,(bsbeg)	; erste Bildschirmzeile retten
+	push	hl
+	ld	de,lo.rbe
+	ld	bc,lo.msl
+	ldir
+	pop	de
+	ld	hl,lo.mst
+	ld	bc,lo.msl
+	ldir
+	setram
+
+	call	ci.ch		; evtl. gedrueckte Taste verwerfen
+	call	ci		; Zeichen uebernehmen
+
+	push	af
+	setbs			; gerettete Bildschrirmzeile auf den Bildschirm
+	ld	hl,lo.rbe
+	ld	de,(bsbeg)
+	ld	bc,lo.msl
+	ldir
+	setram
+	pop	af
+
+	cp	3		; ^C?
+	jp	z,abort		; -> ja, also abort
+	cp	"X"		; X?
+	jr	z,lo.to
+	cp	"x"
+	jr	z,lo.to
+	cp	cr		; ENTER?
+	jp	z,lo.to8	; -> ja, also DC1 annehmen
+	jr	lo.to1		; Status anfordern
+
+lo.to::	ld	a,0c9h		; ja, Drucker abschalten
+	ld	(lo.ch),a
+	jr	lo.to8		; -> DC1 annehmen
+
+lo.to1::
+	ld	hl,lo.ss	; Statusmeldung vom Drucker fordern
+	ld	b,8
+lo.to2::in	a,(lo.sioca)
+	bit	2,a
+	jr	z,lo.to2
+lo.to3::in	a,(lo.siocb)
+	bit	2,a
+	jr	z,lo.to3
+	ld	a,(hl)
+	inc	hl
+	out	(lo.sioda),a
+	out	(lo.siodb),a
+	djnz	lo.to2
+
+	ld	de,0		; ca. 1 sec auf Antwort warten
+lo.to4::in	a,(lo.sioca)	; Antwort vom Drucker empfangen bis ab-
+	bit	0,a		; schliessendes DC1 oder DC4 gekommen ist
+	jr	z,lo.to5
+	in	a,(lo.sioda)
+	jr	lo.to6
+
+lo.to5::in	a,(lo.siocb)
+	bit	0,a
+	jr	z,lo.to7
+	in	a,(lo.siodb)
+
+lo.to6::and	7fh
+	cp	11h		; DC1?
+	jr	z,lo.to9	; -> ja
+	cp	14h		; DC4?
+	jr	z,lo.to9	; -> ja
+
+lo.to7::dec	de
+	ld	a,d
+	or	e
+	jr	nz,lo.to4
+	jp	lo.to0		; -> Drucker ist immer noch tot
+
+lo.to8::ld	a,11h		; DC1 annehmen
+lo.to9::ld	(lo.dc),a
+	pop	hl
+	pop	de
+	pop	bc
+	ret
+
+lo.mst::defb	"???Drucker??? "
+	defb	"^C Abort; "
+	defb	"ENTER weiter; "
+	defb	"X abschalten; "
+	defb	"sonst wiederholen "
+lo.msl	equ	$-lo.mst
+
+lo.ss::	defb	0,0,0,0,1bh,5bh,35h,6eh	; Statusanforderung Drucker
+
+; Statusroutinen
+; --------------
+;
+lo1.sta::
+lo.sta::
+	ld	a,(qlo)		; ist Drucker schon initialisiert?
+	xor	0ffh
+	ret	nz		; nein, also ist er bereit
+
+	in	a,(lo.sioca)	; ist der Sendepuffer frei?
+	and	4
+	ret	z		; nein, also ist er nicht bereit
+	in	a,(lo.siocb)
+	and	4
+	ret	z		; nein, also ist er nicht bereit
+
+	ld	a,(lo.a01+1)	; ist ESC-Folge begonnen?
+	or	a
+	ld	a,0ffh
+	ret	nz		; ja, also ist er bereit
+
+	in	a,(lo.sioca)	; ist ein Zeichen empfangen worden?
+	bit	0,a
+	jr	z,sdr1		; -> nein
+	in	a,(lo.sioda)	; Handshake-Zeichen des Druckers uebernehmen
+	jr	sdr2
+
+sdr1::	in	a,(lo.siocb)
+	bit	0,a
+	jr	z,sdr3
+	in	a,(lo.siodb)
+
+sdr2::	and	7fh
+	ld	(lo.dc),a
+
+sdr3::	ld	a,(lo.dc)	; hat sich der Drucker abgehangen?
+	cp	11h		; DC1
+	ld	a,0
+	ret	nz		; ja, also ist er nicht bereit
+
+	ld	a,0ffh		; Drucker ist bereit
+	ret
+
+qlo::	defb	0		; Anzeiger, ob Drucker schon initialisiert ist
+lo.dc::	defb	13h		; vom Drucker gesendetes handshake-Zeichen
+drzei::	defb	0		; Zeilenzaehler
+
+ if1
+ramend	defl	ramend-lo.msl
+lo.rbe	equ	ramend
+ endif
+

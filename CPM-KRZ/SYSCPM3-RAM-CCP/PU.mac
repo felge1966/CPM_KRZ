@@ -1,0 +1,44 @@
+; stanzerbedienung ueber alb
+; --------------------------
+;
+; 08.09.1985 (M. Krzikalla)
+
+ if1
+ .printx * Stanzer
+ .printx *     08.09.85 - K6200 an ALB
+ endif
+
+pu.xof	macro
+	endm
+pu.xon	macro
+	endm
+
+pu.kalt	macro
+	endm
+;
+pu.warm	macro
+pu.war::ld	hl,pupar
+	ld	bc,200h+pssta+2
+	otir
+	ld	bc,300h+psdat+2
+	otir
+	endm
+;
+pupar::	defb	0cfh,0fh
+	defb	iopua and 0ffh,0fh,3
+;
+pu.ch::	ld	a,83h		; pio-int erlauben
+	di
+	out	(psdat+2),a
+	ld	a,c
+	out	(psdat),a
+	ei
+pu01::	jr	pu01
+;
+ipuch::	ld	a,3		; int sperren
+	out	(psdat+2),a
+	pop	af		; Rueckkehradresse verwerfen
+ipust::	ei
+	reti
+;
+

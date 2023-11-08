@@ -1,0 +1,107 @@
+; Speicherumschaltungen
+; ---------------------
+;
+; 20.03.1986 (M. Krzikalla)
+
+ if1
+ .printx * Speichersteuerung
+ .printx *     20.03.86 - K8912-Version (mit Autostart)
+ endif
+
+;	System-PIO Port B
+;
+; Legende:
+; --------
+;
+;  | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+;    |   |   |   |   |   |   |   |___  ZRE
+;    |   |   |   |   |   |   |___neg.  0000k 4000k RAM
+;    |   |   |   |   |   |___________  4000k RAM Hintergrund
+;    |   |   |   |   |_______________  (nicht verwendet)
+;    |   |   |   |___________________  8000k ABS
+;    |   |   |_______________________  8000k RAM
+;    |   |___________________________  C000k RAM
+;    |_______________________________  (nicht verwendet)
+
+
+um.kalt	macro
+;;	ld	a,67h		; Umladen entfaellt, da CCP im ROM
+;;	out	(85h),a
+;;	ld	hl,biosan-1600h
+;;	ld	de,ccpadr
+;;	ld	bc,800h
+;;	ldir
+	ld	hl,biosan-1600h+7
+	ld	de,autopu
+	ld	bc,40h
+	ldir
+	ld	a,60h
+	out	(85h),a
+	endm
+
+um.warm	macro
+	ld	a,60h
+	out	(85h),a
+	endm
+
+xsetbs:	push	af		; bs in den adressbereich bringen
+	in	a,(85h)		; -------------------------------
+	set	4,a
+	res	5,a
+um.01:	out	(85h),a
+	pop	af
+	ret
+
+xsetra:	push	af		; bs aus dem adressbereich wegschalten
+	in	a,(85h)		; ------------------------------------
+	res	4,a
+	set	5,a
+	jr	um.01
+
+xsetkm:	push	af		; kmb-bamos in den adressbereich bringen
+	in	a,(85h)		; --------------------------------------
+	set	1,a
+	set	0,a
+	jr	um.01
+
+xreskm:	push	af		; kmb-bamos aus adressbereich wegschalten
+	in	a,(85h)		; ---------------------------------------
+	res	1,a
+	res	0,a
+	jr	um.01
+
+; umschaltmacros
+; --------------
+;
+setbs	macro
+	call	xsetbs
+	endm
+;
+setram	macro
+	call	xsetra
+	endm
+;
+setkmb	macro
+	call	xsetkm
+	endm
+;
+reskmb	macro
+	call	xreskm
+	endm
+;
+sethbf	macro
+	call	xsetkm
+	endm
+;
+reshbf	macro
+	call	xreskm
+	endm
+;
+setdir	macro
+	endm
+;
+resdir	macro
+	endm
+;
+
+

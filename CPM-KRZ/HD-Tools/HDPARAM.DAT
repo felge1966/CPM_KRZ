@@ -1,0 +1,9 @@
+40 controller port (hex!)
+612 cyls (1..1024)
+4 heads (1..8)
+450 start-cyl reduced write current (0..1024)
+450 start-cyl write precompensation (0..1024)
+11 max ECC data burst length (5..11)
+05 drive step option (hex!)
+17 sectors per track (1..26)
+t

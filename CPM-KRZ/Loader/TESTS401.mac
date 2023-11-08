@@ -1,0 +1,97 @@
+	title	26.1.1985  Test des Ladevorganges K5110
+	.z80
+
+lad1	equ	4000h
+lad2	equ	0a400h
+
+	.phase	0
+; Kopfsatz
+	dw	2		; naechster zu ladender Sektor ist 0/2
+	defs	126,0e5h
+
+; Ladeadressensatz
+	defb	'5110TEST',0
+	defw	start		; Startadresse
+	defb	0
+
+	defw	lad1		; Ladeadresse
+	defw	(lad1e-lad1)/128; Anzahl der zu ladenden Sektoren
+	defb	0ffh		;  (weiterer Bereich)
+
+	defw	lad2		; Ladeadresse
+	defw	(lad2e-lad2)/128; Anzahl der zu ladenden Sektoren
+	defb	0ffh		;  (Ende)
+
+	defs	256-$,0e5h
+	.dephase
+
+; 1. Bereich
+	.phase	lad1
+texta:	defb	'Hallo, Peter!'
+texte:
+
+nmitex:	defb	'es wurde NMI betaetigt!'
+nmitexe:
+
+retn:	retn
+
+nmi:	ld	hl,0d100h
+	ld	hl,nmitex
+	ld	bc,nmitexe
+	ldir
+	call	retn
+
+start:	ld	sp,4000h
+	di
+	ld	a,0c3h
+	ld	(66h),a
+	ld	hl,nmi
+	ld	(67h),hl
+
+	ld	hl,0d000h	; Grundtext anzeigen
+	ld	de,0d001h
+	ld	bc,3feh
+	ld	(hl),20h
+	ldir
+	ld	hl,texta
+	ld	de,0d000h
+	ld	bc,texte-texta
+	ldir
+
+sp01:	in	a,(20h)
+	ld	hl,0d080h
+	call	zeige
+	in	a,(24h)
+	ld	hl,0d084h
+	call	zeige
+	jr	sp01
+;
+zeige:	push	af
+	rrca
+	rrca
+	rrca
+	rrca
+	call	zeigbyt
+	pop	af
+zeigbyt:and	0fh
+	cp	0ah
+	jr	c,zei01
+	add	a,"A"-"0"-10
+zei01:	add	a,"0"
+	ld	(hl),a
+	inc	hl
+	ret
+
+	defs	(($+127) and 0ff80h)-$,0e5h
+lad1e:
+	.dephase
+
+; 2. Bereich
+	.phase	lad2
+
+	defs	(($+127) and 0ff80h)-$,0e5h
+lad2e:
+	.dephase
+
+	end
+

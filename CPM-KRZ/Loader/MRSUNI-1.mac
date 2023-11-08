@@ -1,0 +1,432 @@
+	title	17.06.1985  Mikrorechnersystem der HUB Berlin
+	.z80
+;
+;----------------------------------------------------------------------
+;
+;  Dieses System startet bei RESET und fuehrt folgende Funktionen aus:
+;
+;      - ermittelt, ob ATD oder ATS vorhanden ist
+;
+;      - Bildschirm loeschen und Kopf ausgeben
+;
+;      - Menuvorgabe und Auswahl
+;
+;           Systemladen von Kassette
+;           Programmstart
+;
+;----------------------------------------------------------------------
+;
+; Tastatur an ATD, ABS 7023
+;
+akbadr	equ	30h		; Basisadresse AKB
+bsanf	equ	8000h		; Bildschirmadresse
+;
+maxs	equ	64		; Anzahl Zeichen pro Zeile
+maxz	equ	16		; Anzahl Zeilen auf BS
+;
+; Toradressen der Tastatur
+;
+ptch	equ	0e0h		; Zeichenport ATD/ATS
+;
+up	equ	03h		; Tastenkode fuer Pfeil nach oben
+down	equ	07h		; Tastenkode fuer Pfeil nach unten
+cr	equ	9dh		; Tastenkode fuer ENTER-Taste
+del	equ	0bh		; Tastenkode fuer Pfeil nach links
+;
+kmbrob	equ	260h
+kmbini	equ	kmbrob+961h
+kmbruc	equ	kmbrob+69fh
+;
+	page	66
+;  Macros
+;  ------
+;
+putst	macro	zeile,spalte,text,len
+	ld	de,bsanf + (zeile-1)*maxs + spalte-1
+	ld	hl,text
+	ld	bc,len
+	ldir
+	endm
+;
+; positionen der texte auf dem bs
+;
+zeilt1	equ	1		; text n1
+spalt1	equ	20
+
+zeilt2	equ	4		; text n2
+spalt2	equ	23
+
+zeilt3	equ	9		; text n3
+spalt3	equ	5
+
+zeilt4	equ	11		; text n3
+spalt4	equ	5
+
+zeilt5	equ	13		; text n4
+spalt5	equ	5
+	page	66
+;**********************************************************************
+;**********************************************************************
+;**                                                                  **
+;**              M i k r o r e c h n e r s y s t e m                 **
+;**                                                                  **
+;**                        der HUB Berlin                            **
+;**                                                                  **
+;**********************************************************************
+;**********************************************************************
+;
+	.phase	0
+start::	jr	begin
+	jp	kmb
+	jp	lesen
+	jp	rucksp
+	jp	endruc
+;
+n1::	defâ	'Urlader HUB/Krz'
+n2::	defâ	'(17.06.85)'
+n3::	defâ	'Ladeî voî Kassettå '
+n4::	defâ	'Start'
+n5::
+	page	66
+begin::	ld	sp,spber
+;
+; Interruptsystem setzen
+;
+	im 2
+	ld	a,2
+	ld	i,a
+	ei
+;
+; Bildschirm loeschen
+;
+	ld	hl,bsanf
+	ld	de,bsanf+1
+	ld	bc,maxs*maxz-1
+	ld	(hl),20h
+	ldir
+;
+; Kopf ausgeben
+;
+	putst	zeilt1,spalt1,n1,n2-n1
+	ld	hl,bsanf+zeilt1*maxs+spalt1-1
+	ld	de,bsanf+zeilt1*maxs+spalt1
+	ld	bc,n2-n1-1
+	ld	(hl),'='
+	ldir
+	putst	zeilt2,spalt2,n2,n3-n2  ; (Version vom ...)
+;
+; Menu ausgeben
+;
+sp20::	putst	zeilt3,spalt3,n3,n4-n3  ; Systemladen von Kassette B
+	ld	a,'B'
+	ld	(de),a
+	putst	zeilt4,spalt4,n3,n4-n3  ; Systemladen von Kassette C
+	ld	a,'C'
+	ld	(de),a
+	putst	zeilt5,spalt5,n4,n5-n4  ; Programmstart
+;
+; Art des Tastaturanschlusses bestimmen
+;
+	ld	hl,qatd		; es ist eine ATD
+	ld	(hl),0
+
+	ld	d,5		; Einschalttypzeichen uebergehen
+	ld	b,(hl)
+	ld	c,b
+sp210::	dec	c
+	jr	nz,sp210
+	djnz	sp210
+	in	a,(ptch)
+	dec	d
+	jr	nz,sp210
+
+	xor	a		; reset an ATD und ATS ausgeben
+	out	(ptch+0ch),a
+	out	(ptch+2),a
+
+	ld	d,5
+sp211::	dec	bc		; auf Typzeichen warten
+	ld	a,b
+	or	c
+	jr	z,sp213
+	in	a,(ptch+4)
+	bit	3,a
+	jr	nz,sp211
+	inc	bc
+	ld	a,b
+	or	c
+	jr	nz,sp217	; -> es ist eine ATD
+	jr	sp215		; -> es ist eine ATS
+
+sp213::	dec	d
+	jr	nz,sp211
+sp215::	ld	(hl),1		; es ist eine ATS
+sp216::	in	a,(ptch+1)
+	bit	3,a
+	jr	nz,sp216
+sp217::	in	a,(ptch)	; Typzeichen lesen
+;
+; Speicherumschaltung initialisieren
+;
+	ld	a,0cfh
+	out	(87h),a
+	ld	a,57h
+	out	(85h),a
+	ld	a,80h
+	out	(87h),a
+;
+; Auswahleingabe
+;
+sp22::	ld	de,bsanf+(zeilt3-1)*maxs
+	call	ekom
+	cp	up
+	jr	z,sp25
+	cp	cr
+	jr	z,sp41		; -> Systemladen von Kassette B
+;
+sp23::	ld	de,bsanf+(zeilt4-1)*maxs
+	call	ekom
+	cp	up
+	jr	z,sp22
+	cp	cr
+	jr	z,sp42		; -> Systemladen von Kassette C
+;
+sp25::	ld	de,bsanf+(zeilt5-1)*maxs
+	call	ekom
+	cp	up
+	jr	z,sp23
+	cp	cr
+	jp	z,sp61		; -> Programmstart
+	jr	sp22
+;
+;--------------------------------
+;
+	page	66
+ekom::	push	de
+	ld	hl,pfeil
+	ld	bc,4
+	ldir
+	pop	hl
+sp31::	call	etas
+	cp	cr
+	jr	z,sp34
+	cp	down
+	jr	z,sp32
+	cp	up
+	jr	nz,sp31
+;
+sp32::	ld	(hl),20h	; Pfeil loeschen
+	inc	hl
+	ld	(hl),20h
+	inc	hl
+	ld	(hl),20h
+	inc	hl
+sp33::	ld	(hl),20h
+	ret
+;
+sp34::	inc	hl
+	inc	hl
+	inc	hl
+	jr	sp33
+;
+pfeil::	defb	'-->',0a0h
+;
+;----------------------------------------------------------------------
+;
+	page	66
+; Systemladen von Kassette
+;
+sp41::	ld	a,1		; B
+	jr	sp43
+sp42::	ld	a,2
+sp43::	push	hl
+	ld	hl,eatab
+	push	hl
+	pop	ix
+	ld	(hl),0
+	inc	hl
+	inc	hl
+	ld	(hl),akbadr	; Basisadresse AKB
+	inc	hl
+	ld	(hl),a
+	inc	hl
+	inc	hl
+	ld	de,kmbep
+	ld	(hl),e
+	inc	hl
+	ld	(hl),d
+;
+	pop	hl
+	call	ename
+;
+	call	kmbini
+	ld	a,31h		; reservieren ein
+	call	kmb
+	call	rucksp		; rueckspulen
+	call	endruc
+;
+sp44::	call	lesen
+	jr	nz,fehler
+;
+	ld	hl,kmbpuf	; Name gefunden?
+	ld	de,nampuf
+	ld	b,4
+sp45::	ld	a,(de)
+	cp	(hl)
+	jr	nz,sp46		; -> nicht gefunden
+	inc	hl
+	inc	de
+	djnz	sp45
+;
+	ld	bc,252		; uebertragen kmbpuf --> 0c04
+	ldir
+	jp	0c04h		; Boot starten
+;
+sp46::	ld	(ix+10),1
+	ld	a,71h		; um eine Datei vorsetzen 
+	call	kmb
+	jr	z,sp44
+;
+fehler::call	rucksp		; Fehler; rueckspulen
+	ld	a,41h		; reservieren aus
+	call	kmb
+	rst	0
+;
+	page	66
+;----------------------------------------------------------------------
+;
+rucksp::ld	a,21h		; rueckspulen
+	jp	kmb
+;
+endruc::call	kmbruc
+	jr	c,endruc
+	ret
+;
+lesen::	ld	a,2
+	call	kmb
+	ret	nz
+	ld	a,(eatabl)
+	dec	a
+	ret	nz
+	ld	a,(eatabl+1)
+	or	a
+	ret
+;
+;----------------------------------------------------------------------
+;
+kmb::	ld	(eatab+4),a
+	call	kmbrob
+kmb01::	halt
+	jr	kmb01
+kmbep::	inc	sp
+	inc	sp
+	bit	7,(ix)
+	ret
+;
+	page	66
+;----------------------------------------------------------------------
+;
+etas::	ld	a,(qatd)
+	or	a
+	jr	nz,etas1
+	in	a,(ptch+4)
+	jr	etas2
+etas1::	in	a,(ptch+1)
+etas2::	bit	3,a
+	jr	nz,etas
+	in	a,(ptch)
+	ret
+;
+;----------------------------------------------------------------------
+;
+ename::	ld	bc,n4-n3+3
+	add	hl,bc
+eadr::	ld	de,nampuf
+	ld	b,4
+;
+sp35::
+	ld	(hl),0a0h	; Cursor setzen
+	call	etas
+	cp	del
+	jr	z,sp37		; -> Zeichen loeschen
+	cp	'0'
+	jr	c,sp35
+	cp	'Z'+1
+	jr	nc,sp35
+	ld	(de),a
+	ld	(hl),a
+	inc	hl
+	inc	de
+	djnz	sp35
+;
+sp36::	call	etas
+	cp	del
+	jr	z,sp37
+	cp	cr
+	ret	z
+	jr	sp36
+;
+sp37::	ld	a,b
+	cp	4
+	jr	nc,sp35
+	ld	(hl),20h
+	dec	hl
+	dec	de
+	inc	b
+	jr	sp35
+;
+	page	66
+;----------------------------------------------------------------------
+;
+sp61::	ld	hl,bsanf+(zeilt5-1)*maxs+n5-n4+7  ; Programmstart
+	push	hl
+	call	eadr
+	ld	b,4
+	ld	de,0
+	pop	hl
+sp62::	ld	a,(hl)
+	cp	'0'
+	jr	c,sp61		; -> Fehler
+	cp	'9'+1
+	jr	c,sp63		; -> 0...9
+	cp	'A'
+	jr	c,sp61		; -> Fehler
+	cp	'F'+1
+	jr	nc,sp61		; -> Fehler
+;
+	sub	7		; A...F
+sp63::	sub	'0'
+	push	hl
+	ld	h,d
+	ld	l,e
+	rept	4
+	add	hl,hl
+	endm
+	add	a,l
+	ld	d,h
+	ld	e,a
+	pop	hl
+	inc	hl
+	djnz	sp62
+	ex	de,hl
+	jp	(hl)
+
+ende::
+ if ende gt 248h
+   if1
+   .printx * ???? MRSUNI ist zu lang ???? *
+   endif
+ else
+	defs	248h-ende,0ffh
+ endif
+
+qatd	equ	0ed6h		; 0 - ATD; 1 - ATS
+spber	equ	0ed6h
+eatab	equ	0ed7h
+eatabl	equ	eatab+9
+kmbpuf	equ	0ef8h
+nampuf	equ	0c00h
+;
+	.dephase
+	end
+

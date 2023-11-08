@@ -1,0 +1,301 @@
+; Tastaturbedienung K7634 an ATD
+; ------------------------------
+;
+; 28.01.1986 (M. Krzikalla)
+; 27.01.1988 (M. Krzikalla)
+;            ci.gra gestrichen
+; 02.02.1988 (M. Krzikalla)
+;            ^C und ^R veraendert
+
+ if1
+ .printx * Tastatur
+ .printx *     02.02.88 - K7634 an ATD/ATS interruptgetrieben
+ endif
+
+; Arbeitszellen
+; -------------
+;
+dptst::	defb	ptch+4		; Statusport     (voreingestellt auf ATD)
+dptcmd::defb	ptch+0ch	; Kommandoport   (	     "		)
+ptcom::	defb	0d7h		; CTC-Steuerwort (           "		)
+;
+cont::	defb	0		; Anzeiger, ob bei Zeichenuebernahme CONT gedr.
+cista::	defb	0		; 0  - kein Zeichen in cizei
+
+;				; ff - Zeichen in cizei
+cizei::	defb	0		; uebernommenes Zeichen
+cihalt::defb	0		; zum dynamischen Halt
+;
+aboerl::defb	0		; 0 - sofortabort erlaubt
+;				; 1 - abort erst nach kmb-ende
+qabort::defb	0		; 0 - kein abort nach kmb-ende
+;				; 1 - abort      nach kmb-ende
+abcnt::	defb	0		; aborttastendruckzaehler
+;
+pf10er::defb	0		; 1 - Sondertasten erlauben
+
+; Interruptbehandlung Tastatur
+; ----------------------------
+;
+icich::	push	af
+	push	bc
+	ld	a,(dptst)
+	ld	c,a
+	in	a,(c)
+ci.crtl::xor	4		; dieser Befehl wird evtl. veraendert
+	ld	(cont),a
+;
+	in	a,(ptch)
+	cp	typzei
+	jr	nz,icichb
+
+icichg::pop	bc
+	pop	af
+	ei
+	reti
+
+icichb::ld	(cizei),a
+	cp	ci.hlt		; halt?
+	jr	nz,icicha
+	xor	a		; kein Zeichen bereit
+	ld	(cista),a
+	ld	a,(cihalt)
+	xor	1
+	ld	(cihalt),a
+	jr	icich2
+;
+icicha::cp	ci.abo		; Abort?
+	jr	nz,icich1
+	xor	a
+	ld	(cista),a
+	ld	a,(abcnt)
+	dec	a
+	ld	(abcnt),a
+	jp	m,icich0	; -> unbedingter Sofortabort
+	jr	nz,icich2
+	ld	a,(aboerl)
+	or	a
+	jr	z,icich0	; -> Sofortabort
+	ld	a,1		; Abort nach kmb-ende
+	ld	(qabort),a
+	jr	icich2
+;
+icich0::ld	a,3		; Sofortabort
+	ld	(abcnt),a
+	xor	a
+	ld	(aboerl),a
+	call	reti
+	ei
+	jp	abort
+;
+icich1::ld	a,3		; gueltiges Zeichen ist angekommen, also merken
+	ld	(abcnt),a
+	ld	a,0ffh
+	ld	(cista),a
+;
+icich2::ei
+	call	reti
+	ld	a,(cihalt)
+	or	a
+	jr	z,icich4	; -> kein dynamisches halt
+	ld	a,(dptcmd)
+	ld	c,a
+	ld	a,0efh		; Lampe ein
+	out	(c),a
+icich3::ld	a,(cihalt)
+	or	a
+	jr	nz,icich3
+	ld	a,0ffh		; Lampen aus
+	out	(c),a
+;
+icich4::pop	bc
+	pop	af
+	ret
+;
+reti::	reti
+
+; Statusabfrage
+; -------------
+;
+ci.sta::ld	a,(cista)	; Taste gedrueckt       : a = ffh, z-flag = nz
+	or	a		; Taste nicht gedrueckt : a = 00h, z-flag = z
+	ret
+
+; Zeicheneingabe
+; --------------
+;
+ci.ch::	xor	a
+	ld	(cista),a
+	ld	a,(cizei)
+	ret
+
+; akustisches Signal
+; ------------------
+;
+ci.bell::
+	xor	a
+	ld	a,(dptcmd)
+	ld	c,a
+	ld	a,0
+	out	(c),a
+	ret
+
+; Initialisierungen
+; -----------------
+;
+ci.ini::ld	a,low io	; Hardware initialisieren
+	out	(ptctc),a
+	ld	hl,icich
+	ld	(ioctc+6),hl
+	ld	a,(ptcom)
+	out	(ptctc+3),a
+	ld	a,1
+	out	(ptctc+3),a
+	ret
+
+ci.kalt	macro
+ci.kal::
+; Typzeichen nach power-on-reset uebergehen
+;    (nur noetig wenn ohne MRSUNI gearbeitet wird)
+;
+	ld	hl,0
+ci.ka0::dec	hl
+	ld	a,l
+	or	h
+	jr	nz,ci.ka0
+	ld	l,3
+ci.ka1::ld	b,28h
+ci.ka2::in	a,(ptch)
+	push	bc
+	ld	b,0ffh
+ci.ka3::djnz	ci.ka3
+	pop	bc
+	djnz	ci.ka2
+	dec	l
+	jr	nz,ci.ka1
+
+; Art des Tastaturanschlusses bestimmen
+;
+	ld	a,0cfh		; den ATD-PIO initialisieren
+	out	(ptch+17h),a
+	ld	a,0beh
+	out	(ptch+17h),a
+	ld	a,0
+	out	(ptch+15h),a
+	in	a,(ptch+15h)
+	bit	6,a
+	jr	z,ci.ka9	; ja,   -> es ist eine ATD
+
+	ld	a,ptch+1	; auf ATS umstellen
+	ld	(dptst),a
+	inc	a
+	ld	(dptcmd),a
+	ld	a,0c7h
+	ld	(ptcom),a
+	ld	a,15h		; Drucker 0 zuweisen
+	ld	(3),a
+
+ci.ka9::ld	a,(dptst)	; ermitteln, ob CTRL low- oder highaktiv ist
+	ld	c,a
+	in	a,(c)
+	and	4
+	ld	(ci.crtl+1),a
+	xor	a
+	ld	(cista),a
+	endm
+
+ci.warm	macro
+	ld	a,8		; <- auf backspace einstellen
+	ld	(ci.tbs+1),a
+	ld	(ci.tb2+1),a
+	xor	a
+	ld	(aboerl),a
+	ld	(qabort),a
+	ld	a,3
+	ld	(abcnt),a	; Abort erlauben
+	call	ci.ini
+	endm
+
+ci.xof	macro
+ci.xf::	ld	a,41h
+	out	(ptctc+3),a
+	endm
+ci.xon	macro
+	local	ci.xn
+ci.xn::	in	a,(ptch)
+	call	ci.ini
+	endm
+
+; Programmabbruch
+; ---------------
+;
+abort::	ld	sp,spber1
+	setram
+	reshbf
+	resdir
+	call	km.abo		; falsche Reservierungen ausschalten
+	ld	a,3
+	ld	(abcnt),a
+	ld	hl,aboms
+	call	msgout
+	jp	biosan+3
+;
+aboms::	defb	lf,cr,'abort',0
+
+; Umschluesseltabelle
+; -------------------
+;
+ci.hlt	equ	97h		; PF7
+ci.abo	equ	9ch		; PF12
+;
+ci.sys	equ	0		; ---- - zurueck ins MRS-Urladersystem
+ci.hex	equ	0		; ---- - hexadezimale Eingabe eines Zeichens
+ci.lr0	equ	09ah		; PA1  - Druckerreset 0  72 Zeilen
+ci.lr1	equ	09bh		; EOF  - Druckerreset 1  66 Zeilen
+ci.cap	equ	99h		; PF9  - Buchstaben Gross-/Kleinumsch.
+ci.gra	equ	0; 98h		; PF8  - Groesse des Geraetes A festlegen
+ci.le1	equ	91h		; PF1  - laden/entladen Laufwerk 1
+ci.le2	equ	92h		; PF2  - laden/entladen Laufwerk 2
+ci.le3	equ	93h		; PF3  - laden/entladen Laufwerk 3
+ci.le4	equ	94h		; PF4  - laden/entladen Laufwerk 4
+ci.le5	equ	95h		; PF5  - laden/entladen Laufwerk 5
+ci.le6	equ	96h		; PF6  - laden/entladen Laufwerk 6
+ci.bsd	equ	8fh		; CNCL - Bildschirm drucken
+ci.cmd	equ	0		; ---- - Verzeichnis des RAM-Floppies loeschen
+ci.ff	equ	09h		; EINP - form feed auf LST: ausgeben
+ci.lf	equ	0		; ---- - line feed auf LST: ausgeben
+;
+tastab::
+	defb	8dh,20h		; clear		= space
+;	defb	09h,		; erase inp	=
+;	defb	8dh,		; clear		=
+;	defb	8fh,		; cncl		=
+	defb	11h,10h		; rec		= ^P
+;	defb	91h,		; pf1		=
+;	...
+;	defb	9ch,		; pf12		=
+	defb	08h,1bh		; erease off	= esc
+	defb	0fh,09h		; |<-|		= tab
+	defb	02h,16h		; ins mode	= ^V
+	defb	1bh,7fh		; del		= del
+	defb	8bh,7fh		; del		= del
+ci.tb2::defb	10h,08h		; off		= bs
+	defb	1ch,0eh		; ins line(dup)	= ^N
+	defb	8ch,0eh		; ins line(dup)	= ^N
+	defb	1eh,3		; del line(fm)	= ^C
+	defb	8eh,3		; del line(fm)	= ^C
+	defb	"_",01h		; _		= ^A
+	defb	03h,05h		; ^  (ins line)	= ^E
+	defb	13h,06h		;    (del line)	= ^F
+	defb	01h,"_"		; ->|		= _
+ci.tbs::defb	0bh,08h		; <-      (|<-) = bs
+	defb	05h,11h		; |->      (v)  = ^Q
+	defb	04h,04h		; ->       (^)  = ^D
+	defb	1fh,09h		; reset		= tab
+	defb	9dh,0dh		; enter		= cr
+	defb	0ah,12h		; <-'		= ^R
+	defb	07h,18h		; v        (<-)	= ^X
+	defb	06h,0dh		;          (->) = CR
+tastae::
+;
+

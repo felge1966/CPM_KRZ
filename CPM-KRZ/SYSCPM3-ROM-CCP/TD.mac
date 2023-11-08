@@ -1,0 +1,591 @@
+; RAM-FLoppybedienung fuer 512K-Einheiten gemischter Technologie
+;
+; 01.04.87 (M. Krzikalla)
+;          --- Fehler in Mehrkartenbedienung beseitigt
+;          --- CCP-Kopie wird im RAM-Floppy abgelegt
+; 27.01.88 --- ablegen vom CCP-Kopie generierbar
+;          --- verdraengen von A: nach M: generierbar
+
+ if1
+ .printx * RAM-Floppy
+ .printx *     27.01.88 - 0-4 RAF-512 als A: (verdraengt evtl. A: nach M:)
+ endif
+
+;------------------------------------------------------------------------------
+; Soll ein CCP-Kopie im RAM-Floppy abgelegt werden?
+;   ja, es soll               -> rafccp equ 0ffffh
+;   nein, es soll nicht      -> rafccp equ 0
+rafccp	equ	0
+
+;------------------------------------------------------------------------------
+; Soll A: bei Vorhandensein eines RAM-Floppy nach M: verdraengt werden, und
+; statt dessen das RAM-Floppy als A: eingetragen werden?
+;   ja, A: soll nach M: verdraengt werden     rafam  equ 0ffffh
+;   nein, es soll nicht			      rafam  equ 0
+rafam	equ	0ffffh
+
+;------------------------------------------------------------------------------
+; Mit diesem  RAM-Floppytreiber werden mehrere 512K-Einheiten als einheitliches
+; logisches CP/M-Geraet bedient.  In der Tabelle ma.512 ist fuer jede 512K-Ein-
+; heit  die  Basisadresse  und  die Startadresse  der Technologie-Bedienroutine
+; eingetragen.  Die Technologie-Routine erhaelt beim Aufruf folgende Parameter:
+;
+;     B,A  : Nr. des 128byte-Records auf dieser 512K-Einheit
+;     C    : Basisadresse dieser 512K-Einheit (aus der Tabelle ma.512)
+;     D    : 80h initialisieren der 512K-Einheit
+;	   :  1  lesen von einem Byte nach A
+;	   :  2  schreiben von einem Byte aus L
+;	   :  4  lesen von 128 Bytes
+;	   :  8  schreiben von 128 Bytes
+;     E    : nur verwendet bei D=1,2: Nr. des zu lesenden/zu schreibenden Bytes
+;     HL   : Transferadresse
+;
+; Beim Kaltstart wird die Existenz der 512K-Einheiten getestet. Nicht vorhande-
+; ne Einheit werden in ma.512 gestrichen; die folgenden Eintragungen ruecken
+; nach. Die 512K-Einheiten werden in 64K-Bloecken auf Existenz geprueft und so
+; die Kapazitaet ermittelt. Die erste nicht voll bestueckte 512K-Einheit been-
+; det die Ermittlung der Kapazitaet des RAM-FLoppy's.
+
+ma.512::
+	defb	88h		; RAF-512
+	defw	ma.raf
+	defb	8ah		; RAF-512
+	defw	ma.raf
+	defb	8ch		; RAF-512
+	defw	ma.raf
+	defb	8eh		; RAF-512
+	defw	ma.raf
+;
+ma.5end::
+
+;------------------------------------------------------------------------------
+td.warm	macro
+	endm
+
+td.kalt	macro
+td.kal::xor	a		;; Kapazitaet bisher 0
+	ld	(ma.kap),a
+	ld	hl,ma.512
+	ld	b,0+(ma.5end-ma.512)/3
+
+ma.01::	push	bc
+	push	hl
+	ld	c,(hl)		;; Basisadresse	inc	hl
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(ma.call+1),hl	;; Adresse der Bedienroutine fuer diese Karte
+
+	ld	d,80h		;; Initialisierung
+	call	ma.call
+
+	ld	b,8		;; 8x64K-Bloecke auf Existenz pruefen
+ma.01a::push	bc
+	ld	a,8
+	sub	b
+	add	a,a
+	ld	b,a
+	call	ma.pre		;; pruefen, ob dieser 64K-Block existiert
+	jr	nz,ma.01b	;; -> ja, also Kapazitaet erhoehen
+	pop	bc
+	ld	a,8
+	cp	b
+	jr	z,ma.02		;; -> diese 512K-Einheit existiert nicht;
+				;;    sie wird aus ma.512 entfernt
+	jr	ma.04		;; -> diese 512K-Einheit ist die letzte des
+				;;    RAM-Floppy, da sie nur teilweise bestueckt
+
+ma.01b::ld	a,(ma.kap)	;; Kapazitaet = Kapazitaet + 64K
+	inc	a
+	ld	(ma.kap),a
+	pop	bc
+	djnz	ma.01a		;; -> evtl. weiteren 64K-Block der Einheit pr.
+
+	pop	hl
+	pop	bc
+	inc	hl
+	inc	hl
+	inc	hl
+	djnz	ma.01		;; -> naechste 512K-Einheit untersuchen
+	jr	ma.04
+
+;;--------------------------------
+;; nicht existente 512K-Einheit aus der Tabelle entfernen
+;;
+ma.02::	pop	de
+	ld	hl,3
+	add	hl,de
+	pop	bc
+	push	bc
+	push	de
+
+ma.03::	ld	a,(hl)		;; Tabelleneintrag in ma.512 streichen
+	ld	(de),a
+	inc	hl
+	inc	de
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de
+	ld	a,(hl)
+	ld	(de),a
+	inc	hl
+	inc	de	djnz	ma.03
+
+	pop	hl
+	pop	bc
+	dec	b
+	jp	nz,ma.01
+
+;;--------------------------------
+;; alle 512K-Einheiten sind initialisiert und auf Existenz ueberprueft
+;;
+ma.04::	ld	a,(ma.kap)	;; Anzahl der 64K-Bloecke
+	or	a
+	jr	nz,ma.05a	;; -> RAM-Floppy vorhanden
+
+ma.05::	xor	a
+	ld	(biosan-1600h+7),a ;; CCP-Kommando loeschen
+	jp	ma.xx
+
+;; fuer jede angefangene 512K-Einheit werden 4Kbyte = 2 Spuren fuer Kontroll-
+;; summen reserviert
+ma.05a::ld	l,a		;; Kapazitaet berechnen
+	ld	h,0
+	add	a,7
+	srl	a
+	srl	a
+	srl	a		;; Anzahl der 512K-Einheiten
+	sla	a		;; pro Einheit 2 Spuren (=4K) reservierten
+
+ if rafccp
+	inc	a		;; plus 1 Spur (=2K) fuer CCP-Kopie
+ endif
+
+	ld	(ma.res),a	;; Anzahl der reservierten Spuren eintragen
+
+	add	hl,hl		;; Anzahl der 2K-Bloecke = Anzahl der
+	add	hl,hl		;;           64K-Bloecke * 32
+	add	hl,hl
+	add	hl,hl
+	add	hl,hl
+	ld	c,a		;;        - Anzahl der reserv. 2K-Spuren
+	ld	b,0
+	xor	a
+	sbc	hl,bc
+	dec	hl
+	ld	(ma.kap),hl	;; Kapazitaet eintragen
+
+;; wenn die Kapazitaet <= 256 Bloecke ist, so ist die extentmask=1, andernfalls
+;; ist sie =0
+	ld	a,h
+	or	a
+	ld	a,0
+	jr	nz,ma.06	;; -> Kapazitaet > 256 Bloecke
+	inc	a
+ma.06::	ld	(ma.exm),a
+
+ if rafam
+; RAM-Floppy ist vorhanden, also verdraengt es das vorhandene Geraet A: nach M:
+	ld	hl,(ixtab+('A'-'A')*2)
+	ld	(ixtab+('M'-'A')*2),hl
+	ld	hl,(dpha)
+	ld	(dphm),hl
+	ld	hl,ma.ix
+	ld	(ixtab+('A'-'A')*2),hl
+	ld	hl,ma.dph
+	ld	(dpha),hl
+ endif
+
+ if rafccp
+;; CCP-Kopie in RAM-Floppy schreiben
+	ld	hl,biosan-1600h
+	ld	(dma),hl
+	ld	hl,(ma.res)
+	dec	hl
+	ld	(trk),hl
+	ld	hl,1
+ma.062::ld	(sec),hl
+	call	ma.wr
+	ld	hl,(dma)
+	ld	bc,80h
+	add	hl,bc
+	ld	(dma),hl
+	ld	hl,(sec)
+	inc	hl
+	ld	a,l
+	cp	17
+	jr	nz,ma.062
+ endif
+
+;; pruefen, ob Kontrollbytes berechnet werden muessen
+	xor	a
+	ld	b,a
+	ld	e,a
+	ld	d,1		;; 1 byte lesen
+	call	ma.ca0		;; von erster 512K-Einheit
+	cp	0a5h
+	jp	z,ma.05		;; -> RAM-Floppy-Kontrollbytes sind schon ber.
+				;;    also CCP-Kommando loeschen
+
+;; Kontrollbytes berechnen
+	ld	hl,ma.msg
+	call	msgout
+	ld	a,0c9h		;; lesen/schreiben Sektor ohne Kontrollbyte
+	ld	(ma.qq),a
+	ld	hl,80h
+	ld	(dma),hl
+	ld	hl,(ma.res)
+	ld	(trk),hl
+	ld	hl,(ma.kap)
+	inc	hl		;; Anzahl der Spuren, von denen Kontrollbytes
+ma.07::	push	hl		;; gebildet werden muessen
+	ld	hl,0
+ma.08::	inc	hl
+	ld	(sec),hl
+	call	ma.rd		;; Sektor lesen und Kontrollbyte bilden
+	ld	d,2		;; 1 byte schreiben
+	call	ma.ca0		;; auf erste 512K-Einheit
+	ld	hl,(sec)
+	bit	4,l		;; nach 16 Sektoren
+	jr	z,ma.08		;; -> naechster Sektor
+
+	ld	hl,(trk)
+	inc	hl
+	ld	(trk),hl
+	ld	a,1fh
+	and	l
+	jr	nz,ma.081
+	ld	c,'.'
+	call	co.ch
+
+ma.081::pop	hl
+	dec	hl
+	ld	a,h
+	or	l
+	jr	nz,ma.07	;; -> naechste Spur
+
+	ld	b,a		;; eintragen, dass Kontrollbytes gebildet
+	ld	e,a		;; worden sind
+	ld	l,0a5h
+	ld	d,2
+	call	ma.ca0
+
+	ld	a,0cbh		;; lesen/schreiben Sektor mit Kontollbytepr.
+	ld	(ma.qq),a
+
+;; Verzeichnis loeschen
+	ld	hl,ma.cls
+	call	msgout
+	ld	hl,(ma.res)
+	dec	hl
+	ld	(trk),hl
+	ld	de,ma.dir
+ma.091::ld	hl,(trk)
+	inc	hl
+	ld	(trk),hl
+	ld	hl,0
+ma.092::inc	hl
+	ld	(sec),hl
+	push	de
+	call	ma.rd
+	ld	a,0e5h
+	ld	(080h),a
+	ld	(0a0h),a
+	ld	(0c0h),a
+	ld	(0e0h),a
+	call	ma.wr
+	pop	de
+	dec	de
+	ld	a,d
+	or	e
+	jp	z,ma.xx
+	ld	hl,(sec)
+	bit	4,l
+	jr	z,ma.092		;; -> naechster Sektor
+	jr	ma.091			;; -> naechste Spur
+
+ma.msg::defb	cr,lf,'init RAF-512 ',0
+ma.cls::defb	cr,lf,'clearing dir',0
+
+;;-----------------------------------------------------------------------------
+;; UP Pruefen auf Existenz
+;; -----------------------
+;;
+;; Das UP liest ein Byte vom RAM-Floppy, schreibt es erhoeht zurueck, liest es
+;; erneut, prueft, ob sich dieses byte schreiben lies und schreibt das Original-
+;; byte wieder zurueck. Rueckkehr mit dem Originalbyte in A und Z=0, wenn das
+;; RAM-Floppy an dieser Stelle existent war; Z=1 wenn sich das Byte nicht an-
+;; sprechen lies.;; Bei Eintritt in das UP enthaelt B die Stelle, die vom RAM-Floppy zu testen
+;; ist (B = 2, 4, .. ,0eh).
+;;
+ma.pre::xor	a
+	ld	e,a
+	ld	d,1		;; 1 byte lesen nach A
+	push	bc
+	call	ma.call
+	pop	bc
+
+	push	af		;; .. und merken
+	cpl			;; komplementieren
+	ld	(ma.aret),a
+	ld	l,a
+	xor	a
+	ld	e,a
+	ld	d,2		;; 1 byte schreiben aus L
+	push	bc
+	call	ma.call
+	pop	bc
+
+	xor	a
+	ld	e,a
+	ld	d,1		;; 1 byte lesen nach A
+	push	bc
+	call	ma.call
+	pop	bc
+	ld	l,a		;; rueckgelesenes Byte merken
+	ld	a,(ma.aret)
+	cp	l		;; ist das Byte dort angekommen
+	jr	z,ma.pr1	;; -> ja, Karte vorhanden
+	pop	af		;; nein, Karte nicht vorhanden
+	xor	a
+	ret
+
+ma.pr1::pop	af
+	ld	l,a		;; Originalbyte zurueckschreiben
+	xor	a
+	ld	e,a
+	ld	d,2		;; 1 byte schreiben aus L
+	call	ma.call
+	xor	a		;; -> Karte ist vorhanden
+	dec	a
+	ret
+
+ma.aret::db	0
+
+ma.xx::
+	endm
+
+;------------------------------------------------------------------------------
+ma.dph::defw	0,0,0,0
+	defw	dirbf,ma.dpbl
+	defw	0,ma.all
+
+ma.dpbl::
+	defw	16		; 16 Sektoren pro Spur
+	defb	4,0fh		; 2K Blockung
+ma.exm::defb	0
+ma.kap::defw	0		; Kapazitaet-1
+	defw	192-1		; 192 Dir-Eintraege
+	defb	0e0h,0
+	defw	0
+ma.res::defw	0		; Anzahl der reservierten Spuren
+ma.dir	equ	48		; Anzahl der Verzeichnissektoren
+
+	defb	0	defw	ma.rd
+	defw	ma.wr
+ma.ix::
+
+;------------------------------------------------------------------------------
+ma.rd::	ld	d,4
+	jr	ma.11
+
+ma.wr::	ld	d,8
+ma.11::	ld	a,(trk+1)
+	ld	c,a
+	ld	b,0		; BC = Nummer der 512K-Einheit
+	ld	hl,ma.512
+	add	hl,bc
+	add	hl,bc
+	add	hl,bc
+	ld	c,(hl)		; C  = Basisadresse
+	inc	hl
+	ld	a,(hl)
+	inc	hl
+	ld	h,(hl)
+	ld	l,a
+	ld	(ma.call+1),hl
+
+; trk = abcd efgh  ijkl mnop
+;
+	ld	a,(trk)
+	rrca
+	rrca
+	rrca
+	rrca
+	ld	e,a		; E = mnop ijkl
+	and	0fh
+	ld	b,a		; B = 0000 ijkl
+
+;;; diese Befehle sind nur fuer 2M-Karten notwendig
+;;;	ld	a,(trk+1)	;     abcd efgh
+;;;	rrca
+;;;	rrca
+;;;	rrca
+;;;	rrca			;     efgh abcd
+;;;	and	0f0h		;     efgh 0000
+;;;	add	a,b		; B = efgh ijkl
+;;;	ld	b,a		; B = high(Nummer des 128byte-Recordes)
+
+	ld	a,e		;     mnop ijkl
+	and	0f0h		;     mnop 0000
+	ld	hl,sec
+	add	a,(hl)		;     mnop ssss
+	dec	a		; A  = low (Nummer des 128byte-Recordes)
+
+	ld	hl,(dma)	; HL = Transferadresse
+	push	de		; merken lesen/schreiben
+	call	ma.call
+
+	ld	hl,(trk)	; ist reservierte Spur transferiert worden?
+	ld	de,(ma.res)
+	dec	de		; von CCP-Kopie auch Kontrollbyte bilden
+	xor	a
+	sbc	hl,de
+	pop	de
+	jp	m,ma.12a	; -> ja, keine Kontrollbytebehandlung
+
+	call	ma.gks		; Kontrollbyte vom DMA bilden
+ma.qq::	bit	2,d		; wurde RAM-Floppy gelesen?
+	jr	nz,ma.12b	; -> ja
+
+	ld	d,2		; Kontrollbyte hinterlegen
+	call	ma.ca0		; auf erster 512K-Einheit
+ma.12a::xor	a
+	ret
+
+ma.12b::push	hl
+	ld	d,1		; Kontrollbyte lesen
+	call	ma.ca0		; von erster 512K-Einheit
+	pop	hl
+	cp	l
+	ld	a,0
+	ret	z
+	inc	a		; Fehler melden
+	ret
+
+;------------------------------------------------------------------------------
+; Kontrollbyte bilden
+; -------------------
+
+; out   L      = Kontollsumme der 128 Byte ab DMA
+;       B,A,E  = Adresse des Kontollbytes im RAM-Floppy
+
+ma.gks::ld	hl,(dma)
+	xor	a
+	ld	b,128
+ma.gk1::add	a,(hl)
+	rlca
+	inc	hl
+	djnz	ma.gk1
+	ld	l,a
+
+; trk = abcd efgh  ijkl mnop   (0..  )
+; sec = 0000 0000  000s ssss   (1..16)
+;
+	ld	a,(trk)		;     ijkl mnop
+	and	7		;     0000 0nop
+	rlca
+	rlca
+	rlca
+	rlca			;     0nop 0000
+	ld	e,a
+	ld	a,(sec)
+	dec	a
+	add	a,e
+	ld	e,a		; E = 0nop ssss
+
+	ld	a,(trk+1)	;     abcd efgh
+	rrca
+	rrca
+	rrca			;     fgha bcde
+	ld	h,a		; H = fgha bcde
+	and	1fh
+	ld	b,a		; B = 000a bcde
+
+	xor	h		;     fgh0 0000
+	ld	h,a		; H = fgh0 0000
+	ld	a,(trk)		;     ijkl mnop
+	srl	a		;     0ijk lmno
+	srl	a		;     00ij klmn
+	srl	a		;     000i jklm
+	add	a,h		; A = fghi jklm
+	ret
+
+ma.ca0::push	hl
+	ld	hl,(ma.512+1)
+	ld	(ma.call+1),hl
+	pop	hl
+	push	af
+	ld	a,(ma.512)
+	ld	c,a
+	pop	af
+ma.call::
+	jp	0
+
+;------------------------------------------------------------------------------
+
+;     B,A  : Nr. des 128byte-Records auf dieser 512K-Einheit
+;     C    : Basisadresse dieser 512K-Einheit (aus der Tabelle ma.512)
+;     D    : 80h initialisieren der 512K-Einheit
+;	   :  1  lesen von einem Byte nach A
+;	   :  2  schreiben von einem Byte aus L
+;	   :  4  lesen von 128 Bytes
+;	   :  8  schreiben von 128 Bytes
+;     E    : nur verwendet bei D=1,2: Nr. des zu lesenden/zu schreibenden Bytes
+;     HL   : Transferadresse
+;
+ma.raf::inc	c		; RAF-C laden
+	out	(c),a
+	dec	c
+
+	ld	b,128
+	bit	2,d
+	jr	nz,ma.rf1	; -> lesen 128 byte
+	bit	3,d
+	jr	nz,ma.rf0	; -> schreiben 128 byte
+
+	ld	a,7fh
+	sub	e
+	ld	b,a
+	bit	0,d
+	jr	nz,ma.rf2	; -> lesen 1 byte
+
+	bit	1,d
+	jr	nz,ma.rf3	; -> schreiben 1 byte
+
+	ret			; keine Initialisierung notwendig
+
+; der outi-Befehl decrementiert B   V O R   Ausfuehrung der I/O-Operation!
+ma.rf0::otir			; schreiben 128 byte nach 7f, 7e, .. 1, 0
+	ret
+
+; der ini-Befehl decrementiert B   N A C H   Ausfuehrung der I/O-Operation!
+; (weh dem, der das nicht weiss!!!)
+ma.rf1::dec	b
+	inir			; lesen 127 byte von 7f, 7e, .. 2, 1
+	ini			; lesen   1 byte von 0
+	ret
+
+ma.rf2::in	a,(c)		; lesen 1 byte
+	ret
+
+ma.rf3::out	(c),l		; schreiben 1 byte
+	ret
+
+;------------------------------------------------------------------------------
+
+ if1
+ramend	defl	ramend-128	; reicht fuer 1024 Bloecke
+ma.all	equ	ramend
+ endif
+
+; wenn sich RAM-Floppy nicht selbst in IXTAB und DPH eintraegt, dann zur
+; Uebersetzungszeit eintragen
+;
+ if not rafam
+dphga	defl	ma.dph
+ixa	defl	ma.ix
+ endif
+sv21+1),hl

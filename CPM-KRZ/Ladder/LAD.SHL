@@ -1,0 +1,42 @@
+%print ""; ladder; %print ""
+] of byte;
+c:char;  ending: boolean;
+
+procedure readdummy;
+
+var i:integer;
+begin
+for i:= 1 to hi(start)*2-1+(lo(start) and $80)shr 7 do blockread(ladder, fbuff, 1);
+fpos := lo(start) and $7f; file_addr := start
+end;
+
+function getchar: char;
+
+begin
+if fpos=$80 then begin
+   fpos:=0; blockread(ladder, fbuff, 1)
+   end;
+getchar := chr(fbuff[fpos]);
+fpos:=fpos+1;
+file_addr := file_addr+1
+end;
+
+function readword:integer;
+
+begin
+readword := ord(getchar) + (ord(getchar) shl 8)
+end;
+
+begin
+assign(ladder, 'ladder.com'); reset(ladder);
+readdummy;
+write('Output to terminal/printer? (T/P) ');read(kbd,c);
+if upcase(c)='P' then assign(outp, 'lst:') else assign(outp, 'con:');
+rewrite(outp) ; writeln(outp);
+ending := false;
+writeln(outp,
+'1...5....10...15...20...25...30...35...40...45...50',
+'...55...60...65...70...75...80');
+repeat
+  next := readword;
+  c:=ge

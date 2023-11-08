@@ -1,0 +1,697 @@
+	TITLE	4.5.85 K5110-Lade-ROM
+	.Z80
+
+ramaus	equ	0a8h
+ramein	equ	0a0h
+romaus	equ	0a4h
+
+dev	equ	5f1h
+
+	.PHASE	0
+	LD	SP,5000H
+	IM 1
+	JP	I009B
+;-----------------------
+
+; Eintritt durch rst 8 = Start des Programmes im EPROM E000h
+;
+	JP	I0069
+;-----------------------
+
+D000B:	DW	"32"		; wird auf 400h abgelegt
+
+; Beginn RAM-Maschine
+;
+I000D:	XOR	A
+I000E:	LD	(dev),A
+	CALL	?bereit
+	OR	A
+	JR	Z,I001D		; -> ja
+I0017:	LD	A,(dev)
+	INC	A
+	JR	I000E
+
+I001D:	LD	IY,402H
+	LD	DE,1		; abs. Sektor 1
+	CALL	lesueb
+	JR	NZ,I0017	; -> bei Fehler naechstes Geraet abfragen
+
+	LD	DE,(402H)	; DE = abs. Sektornr. des 2. Datensatzes
+	PUSH	DE
+	JR	I003B
+;----------------------
+
+; Eintritt mit rst 30 = Bildschirm mit "E" fuellen
+;
+fehler:	XOR	A
+	LD	B,"E"
+	JP	filram
+;-----------------------
+
+retnn:	RETN
+
+; Eintritt durch Sammelinterrupt
+;
+I0038:	JP	I00C5
+;-----------------------
+
+; Lesen des zweiten Datensatzes = Liste der zu ladenden Bereiche
+;
+I003B:	CALL	lesueb
+	JR	NZ,fehler
+
+	POP	DE		; abs. Sektornr. erhoehen
+	INC	DE
+	PUSH	DE
+
+	LD	HL,40DH		; HL = >Tabelle der Transferparameter<
+I0046:	INC	HL		;           defw  adr,sektanz
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	INC	HL
+	PUSH	DE
+	POP	IY
+
+	LD	C,(HL)
+	INC	HL
+	LD	B,(HL)		; BC = Anzahl der Sektoren
+	INC	HL
+
+I0052:	LD	A,B
+	OR	C
+	JR	Z,I0074		; -> Bereich ist vollstaendig geladen
+	DEC	BC
+	POP	DE
+
+	PUSH	DE		; 3. - n. Datensatz lesen
+	PUSH	HL
+	PUSH	BC
+	CALL	lesueb
+	JR	NZ,fehler
+	ADD	IY,BC
+	POP	BC
+	JR	I006E
+;-----------------------
+	defs	1,0
+I0066:	CALL	retnn		; NMI
+
+I0069:	OUT	(ramaus),A
+	JP	0E000H
+;-----------------------
+I006E:	POP	HL
+	POP	DE
+	INC	DE
+	PUSH	DE
+	JR	I0052
+;-----------------------
+I0074:	LD	A,(HL)		; weiteres Segment?
+	INC	A
+	JR	NZ,I0046	; -> ja
+
+	CALL	allaus
+	LD	HL,romaus*100h+0D3H ; out (romaus),a
+	LD	(5F2H),HL
+	LD	A,0E9H		; jp  (hl)
+	LD	(5F4H),A
+	LD	HL,(40BH)	; Startadresse aus 2. Datensatz
+	JP	5F2H		; -> EPROM wegschalten und Start
+;-----------------------
+
+; Lesen und uebertragen
+;   IY - Adresse
+;   DE - abs. Sektornr.
+;
+lesueb:	PUSH	IY
+	LD	A,(dev)
+	CALL	lesen
+	POP	DE
+	PUSH	BC
+	LDIR
+	POP	BC
+	OR	A
+	RET
+;-----------------------
+
+; Testen, ob EPROM-Karte auf E000h vorhanden ist
+;
+I009B:	OUT	(ramaus),A
+	LD	HL,(0E000H)
+	LD	DE,5249H
+	OR	A
+	SBC	HL,DE
+	JR	Z,I0069		; -> ja
+	OUT	(ramein),A
+	LD	SP,5F0H
+	LD	B,"."		; gesamten RAM mit 2eh fuellen
+filram:	LD	HL,0
+	PUSH	AF
+I00B3:	LD	(HL),B
+	INC	HL
+	LD	A,L
+	OR	H
+	JR	NZ,I00B3
+	POP	AF
+I00BA:	JR	Z,I00BA		; bei nicht vorhanderem RAM dyn. Halt
+	LD	HL,(D000B)
+	LD	(400H),HL
+	JP	I000D
+;-----------------------
+
+I00C5:	JP	I0215
+;-----------------------
+?bereit:JP	I0106
+;-----------------------
+lesen:	JP	I012D
+;-----------------------
+
+; alles ausschalten
+;
+allaus:	LD	HL,pdaus
+
+; Ausgabe einer Port/Daten-Liste
+;
+outtab:	LD	A,(HL)
+	AND	A
+	RET	Z
+	LD	C,A
+	INC	HL
+	LD	A,(HL)
+	OUT	(C),A
+	INC	HL
+	JR	outtab
+;-----------------------
+
+; CRC-Berechnung
+;
+bercrc:	LD	A,(IX+2)
+	LD	C,(IX+1)
+	PUSH	DE
+I00E3:	LD	E,A
+	INC	HL
+	RLCA
+	RLCA
+	RLCA
+	RLCA
+	AND	0FH
+	XOR	E
+	LD	E,A
+	RRCA
+	RRCA
+	RRCA
+	LD	D,A
+	AND	0E0H
+	XOR	(HL)
+	XOR	E
+	LD	E,A
+	LD	A,D
+	AND	1FH
+	XOR	C
+	LD	C,A
+	LD	A,D
+	RRCA
+	AND	0F0H
+	XOR	C
+	LD	C,E
+	DJNZ	I00E3
+	OR	C
+	POP	DE
+	RET
+;-----------------------
+I0106:	LD	HL,pdinit
+	PUSH	AF
+	CALL	outtab
+	POP	AF
+	CALL	setix
+	CALL	I01CE
+	JP	Z,I02C2
+	LD	A,0
+	LD	(604H),A
+	LD	B,8
+	CALL	I019E
+	LD	B,50H
+	CALL	I01A4
+	JP	NZ,I02C2
+	LD	A,0
+	JR	I015C
+;-----------------------
+I012D:	PUSH	DE
+	CALL	setix
+	POP	HL
+
+	XOR	A		; aus abs. Sektornr. Spur/Sektor machen
+	LD	D,A
+	LD	E,(IX+22)	; Anzahl der Sektoren
+	DEC	HL
+	LD	B,0FFH
+I013A:	INC	B
+	SBC	HL,DE
+	JR	NC,I013A
+	ADD	HL,DE
+	INC	L
+	LD	H,B
+	LD	(602H),HL
+
+	LD	A,B		; ist Spurnummer zu gross?
+	CP	(IX+15)
+	JP	NC,I02C2	; -> ja
+
+	BIT	1,(IX)		; Minifloppy?
+	CALL	NZ,?ready	; ja, ready?
+	JP	NZ,I02C2	; -> nein
+
+	CALL	spursu
+	CALL	I0262
+I015C:	PUSH	AF
+	LD	HL,pdaus0	; abschalten
+	CALL	outtab
+	POP	AF
+	LD	HL,60EH
+	LD	BC,80H
+	RET
+;-----------------------
+
+setix:	LD	HL,seltab
+	LD	D,0
+	AND	0FH
+	LD	(601H),A
+	LD	E,A
+	ADD	HL,DE
+	PUSH	HL
+
+	AND	0CH
+	LD	E,A
+	LD	HL,ixtabp
+	ADD	HL,DE
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	PUSH	DE
+	POP	IX		; IX = ixtabk, ixtab5, ixtab8
+	INC	HL
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	POP	HL
+	PUSH	DE
+	RET			; -> Kassette I018C; Floppy I0190
+
+; Kassette
+;
+I018C:	LD	A,(HL)		; select Kassette
+	OUT	(7CH),A
+	RET
+
+; Floppy
+;
+I0190:	LD	A,0FFH
+	OUT	(10H),A
+	LD	A,0
+	OUT	(14H),A
+	IN	A,(16H)
+	LD	A,(HL)
+	OUT	(18H),A		; select Floppy
+	RET
+;-----------------------
+I019E:	CALL	I01BA
+	DJNZ	I019E
+	RET
+;-----------------------
+I01A4:	LD	C,(IX+8)
+	IN	A,(C)
+	AND	(IX+9)
+	RET	Z
+	LD	L,(IX+12)
+	LD	H,(IX+13)
+	CALL	I01C0
+	DJNZ	I01A4
+	INC	B
+	RET
+;-----------------------
+I01BA:	LD	L,(IX+10)
+	LD	H,(IX+11)
+I01C0:	CALL	outtab
+	LD	D,(IX+14)
+	LD	E,0
+wait:	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,wait
+	RET
+;-----------------------
+I01CE:	LD	C,(IX+5)
+	LD	E,(IX+16)
+	IN	A,(C)
+	XOR	E
+	OUT	(C),A
+	IN	B,(C)
+	XOR	E
+	OUT	(C),A
+	IN	A,(C)
+	XOR	B
+	CPL
+	AND	E
+	JR	NZ,I0208
+	DI
+	LD	A,(IX+17)
+	LD	C,(IX+19)
+	OUT	(C),A
+	LD	A,(IX+18)
+	OUT	(C),A
+	LD	A,0
+	LD	(600H),A
+	EI
+	LD	DE,6000H
+I01FC:	LD	A,(600H)
+	CP	2
+	JR	NC,I020D
+	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,I01FC
+I0208:	CALL	I020D
+	XOR	A
+	RET
+;-----------------------
+I020D:	DI
+	LD	A,3
+	OUT	(C),A
+	EI
+	AND	A
+	RET
+;-----------------------
+I0215:	PUSH	HL
+	LD	HL,600H
+	INC	(HL)
+	POP	HL
+	EI
+	RETI
+;-----------------------
+?ready:	LD	DE,0
+	LD	A,0BFH
+	OUT	(10H),A
+I0225:	IN	A,(12H)
+	BIT	0,A
+	RET	Z
+	DEC	DE
+	LD	A,D
+	OR	E
+	JR	NZ,I0225
+	INC	A
+	RET
+;-----------------------
+spursu:	LD	A,(603H)
+	LD	B,A
+	LD	A,(604H)
+	SUB	B
+	JR	Z,I0241
+	JR	C,I025A
+	LD	B,A
+	CALL	I01A4
+
+I0241:	LD	A,(603H)
+	LD	(604H),A
+
+	LD	C,(IX+5)	; Kopf laden
+	IN	A,(C)
+	OR	(IX+6)
+	AND	(IX+7)
+	OUT	(C),A
+	LD	DE,1000H
+	JP	wait
+
+I025A:	NEG
+	LD	B,A
+	CALL	I019E
+	JR	I0241
+;-----------------------
+
+I0262:	LD	E,0FFH
+I0264:	LD	C,(IX+4)
+	LD	D,(IX+3)
+	DI
+	LD	HL,605H
+	LD	B,7
+	PUSH	DE
+	LD	DE,900H
+	CALL	mrksu
+	POP	DE
+	CP	0FEH		; Sektor-ID?
+	JR	NZ,I02BB	; -> nein
+
+	LD	B,D
+I027D:	IN	A,(C)		; gap ueberlesen
+	NOP
+	NOP
+	DJNZ	I027D
+
+	LD	HL,60DH
+	LD	B,83H
+	PUSH	DE
+	LD	DE,250H
+	CALL	mrksu
+	POP	DE
+	CALL	I02CA
+	EI
+
+	LD	HL,604H
+	LD	B,7
+	CALL	bercrc
+	JR	NZ,I02BE
+	LD	A,(606H)
+	LD	HL,603H
+	CP	(HL)
+	JR	NZ,I02C2
+	LD	A,(608H)
+	DEC	HL
+	CP	(HL)
+	JR	NZ,I02BE
+	LD	HL,60CH
+	LD	B,83H
+	CALL	bercrc
+	JR	NZ,I02BE
+	LD	A,0
+	RET
+
+I02BB:	CALL	I02CA
+I02BE:	EI
+	DEC	E
+	JR	NZ,I0264
+
+I02C2:	CALL	allaus
+	LD	A,0FFH
+	JP	I015C
+;-----------------------
+
+I02CA:	BIT	0,(IX)		; Kassette?
+	JR	Z,I02DE		; -> nein
+
+; Kassette
+	IN	A,(7CH)
+	SET	6,A
+	OUT	(7CH),A
+	IN	A,(7CH)
+	AND	20H
+	RET	Z
+	IN	A,(79H)
+	RET
+
+; Floppy
+I02DE:	LD	A,0A5H
+	OUT	(10H),A
+	LD	A,0BBH
+	OUT	(10H),A
+	IN	A,(16H)
+	RET
+;-----------------------
+
+; Marke suchen (FE oder FB)
+;
+mrksu:	LD	(HL),0
+	CALL	I02CA
+	PUSH	HL
+	LD	H,(IX+21)
+	LD	L,(IX+20)
+	EX	(SP),HL
+	RET			; -> Kassette I02F7; Floppy I0314
+
+; Kassette
+I02F7:	IN	A,(7CH)
+	RES	6,A
+	OUT	(7CH),A
+I02FD:	DEC	D
+	JR	Z,I0312
+I0300:	DEC	E
+	JR	Z,I02FD
+	IN	A,(7CH)
+	AND	20H
+	JR	Z,I0300
+I0309:	IN	D,(C)
+	LD	(HL),D
+	INC	HL
+I030D:	INI
+	NOP
+	JR	NZ,I030D
+I0312:	LD	A,D
+	RET
+
+; Floppy 5"
+I0314:	LD	A,85H
+	OUT	(10H),A
+I0318:	DEC	D
+	JR	Z,I0312
+I031B:	DEC	E
+	JR	Z,I0318
+	IN	A,(12H)
+	AND	2
+	JR	NZ,I031B
+	IN	A,(C)
+	LD	D,0
+	CP	0A1H
+	JR	NZ,I0312
+	IN	A,(C)
+	CP	0A1H
+	JR	NZ,I0312
+	IN	A,(C)
+	CP	0A1H
+	JR	NZ,I0312
+	JR	I0309
+
+; Floppy 8"
+I033A:	LD	A,87H
+	OUT	(10H),A
+I033E:	DEC	D
+	JR	Z,I0312
+I0341:	DEC	E
+	JR	Z,I033E
+	IN	A,(12H)
+	AND	2
+	JR	Z,I0309
+	JR	I0341
+;-----------------------
+; IX-Tabellen
+;  0 - bit 0 = 1 Kassette
+;      bit 1 = 1 Minifloppy
+
+ixtabk:	DB	1		; Kassette
+	DW	84CFH		; CRC0
+	DB	0AH
+	DB	79H		; port
+	DB	7DH
+	DB	0
+	DB	7FH
+	DB	7DH
+	DB	4
+	DW	D0363
+	DW	D036A
+	DB	3
+	DB	4CH
+	DB	30H
+	DB	97H
+	DB	0F7H
+	DB	7FH
+	DW	I02F7
+	DB	1AH
+
+D0363:	DB	7DH,0DFH
+	DB	7DH,9FH
+	DB	7DH,0DFH
+	DB	0
+
+D036A:	DB	7DH,0FFH
+	DB	7DH,0BFH
+	DB	7DH,0FFH
+	DB	0
+
+ixtab5:	DB	2		; Minifloppy
+	DW	0E59AH		; CRC
+	DB	1BH		; gap-Laenge nach Sektor-ID
+	DB	16H		; port
+	DB	10H		; in a,(10h)/or 20h/and 0bfh/out (10h),a
+	DB	20H
+	DB	0BFH
+	DB	12H
+	DB	80H
+	DW	D0388
+	DW	D038F		; Schritt ausfuehren
+	DB	6		; Schrittzeit
+	DB	39		; Anzahl der Spuren - 1
+	DB	24H
+	DB	3		; data, data, port  Interrupterlaubnis
+	DB	83H
+	DB	11H
+	DW	I0314
+	DB	26		; Anzahl Sektoren pro Spur
+
+D0388:	DB	10H,0FFH
+	DB	10H,7FH
+	DB	10H,0FFH
+	DB	0
+
+D038F:	DB	10H,0DFH	; Schrittausfuehrung
+	DB	10H,5FH
+	DB	10H,0DFH
+	DB	0
+
+ixtab8:	DB	4		; Floppy 8"
+	DW	84CFH		; CRC
+	DB	8
+	DB	16H
+	DB	10H
+	DB	20H
+	DB	0BFH
+	DB	12H
+	DB	80H
+	DW	D0388
+	DW	D038F		; Schritt ausfuehren
+	DB	3		; Schrittzeit
+	DB	76		; Anzahl der Spuren - 1
+	DB	24H
+	DB	3
+	DB	83H
+	DB	11H
+	DW	I033A
+	DB	26		; Anzahl der Sektoren pro Spur
+
+ixtabp:	DW	ixtabk,I018C
+	DW	ixtab5,I0190
+	DW	ixtab8,I0190
+	DW	ixtabk,I018C
+
+seltab:	DB	0F8H,0FCH,0FAH,0FEH	; Kassetten
+	DB	0EEH,0DDH,0BBH,77H	; Floppy
+	DB	0EEH,0DDH,0BBH,77H	; Floppy
+	DB	0F8H,0FCH,0FAH,0FEH	; Kassetten
+
+pdinit:	DB	7AH,0FH		; alle Anschlussteuerungen in den Grund-
+	DB	7BH,4FH		; zustand setzen
+	DB	7EH,0CFH
+	DB	7CH,0FFH
+	DB	7EH,20H
+	DB	7FH,0CFH
+	DB	7DH,0FFH
+	DB	7FH,0FH
+
+	DB	15H,0FH
+	DB	17H,4FH
+	DB	11H,0FH
+	DB	10H,0FFH
+	DB	13H,0CFH
+	DB	13H,0F7H
+	DB	12H,0F7H
+	DB	18H,0FFH
+	DB	16H,0FFH
+	DB	14H,0
+
+	DB	0
+
+pdaus:	DB	18H,0FFH	; alles ausschalten
+pdaus0:	DB	7CH,0FFH
+	DB	7DH,0FFH
+	DB	10H,0FFH
+	DB	12H,0FFH
+	DB	0
+
+	defs	3,0ffh
+	END
+
