@@ -26,7 +26,7 @@ Aus dem Modul um.mac der Quelle geht die notwendige Speicherumschaltmimik hervor
      -------------------------
   
     System-PIO Port B
- 
+
     |7|6|5|4|3|2|1|0|
      | | | | | | | |
      | | | | | | | +---  /MEMDI1 ZRE
